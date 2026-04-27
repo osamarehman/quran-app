@@ -6,9 +6,14 @@ let onCompleteCallback: (() => void) | null = null;
 let currentReciterId: number = RECITERS[0].id;
 let currentSpeed = 1.0;
 let audioModeConfigured = false;
+let playToken = 0;
 
 export function setReciterId(id: number): void {
   currentReciterId = id;
+}
+
+export function getValidReciterId(id: number): number {
+  return RECITERS.some((r) => r.id === id) ? id : RECITERS[0].id;
 }
 
 function getAudioUrl(surah: number, ayah: number): string {
@@ -20,35 +25,33 @@ function getAudioUrl(surah: number, ayah: number): string {
 
 async function ensureAudioMode(): Promise<void> {
   if (audioModeConfigured) return;
-  try {
-    await setAudioModeAsync({
-      playsInSilentMode: true,
-      shouldPlayInBackground: false,
-      interruptionMode: 'doNotMix',
-      interruptionModeAndroid: 'doNotMix',
-      shouldRouteThroughEarpiece: false,
-      allowsRecording: false,
-    });
-    audioModeConfigured = true;
-  } catch (err) {
-    console.warn('[audioService] setAudioModeAsync failed', err);
-  }
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    shouldPlayInBackground: false,
+    interruptionMode: 'doNotMix',
+    interruptionModeAndroid: 'doNotMix',
+    shouldRouteThroughEarpiece: false,
+    allowsRecording: false,
+  });
+  audioModeConfigured = true;
 }
 
 export async function stopAudio(): Promise<void> {
   if (currentPlayer) {
     try {
       currentPlayer.remove();
-    } catch {
-      // ignore
+    } catch (err) {
+      if (__DEV__) console.warn('[audioService] player.remove failed', err);
     }
     currentPlayer = null;
   }
 }
 
 export async function playAyah(surah: number, ayah: number): Promise<void> {
+  const myToken = ++playToken;
   await ensureAudioMode();
   await stopAudio();
+  if (myToken !== playToken) return; // a newer call superseded us
 
   const url = getAudioUrl(surah, ayah);
   if (__DEV__) console.log('[audioService] playAyah', surah, ayah, url);
@@ -57,13 +60,19 @@ export async function playAyah(surah: number, ayah: number): Promise<void> {
   player.playbackRate = currentSpeed;
 
   player.addListener('playbackStatusUpdate', (status) => {
+    if (myToken !== playToken) return;
     if (status.didJustFinish) {
       onCompleteCallback?.();
     }
   });
 
-  player.play();
+  if (myToken !== playToken) {
+    try { player.remove(); } catch { /* superseded */ }
+    return;
+  }
+
   currentPlayer = player;
+  player.play();
 }
 
 export async function pauseAudio(): Promise<void> {

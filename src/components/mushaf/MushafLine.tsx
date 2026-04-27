@@ -24,8 +24,10 @@ function toArabicNumeral(n: number): string {
 }
 
 // Quranic combining marks not present in IndopakNastaleeq — render via UthmanicHafs.
-// Covers waqf marks (U+06D6–U+06ED), Arabic Extended-A symbols (U+08A0+), and small high marks (U+0610–U+061A).
-const WAQF_RE = /[ؐ-ؚۖ-ۭࢠ-ࣿ]/;
+// Restricted to MARKS only (small high marks U+0610–U+061A, waqf signs U+06D6–U+06ED,
+// Arabic Extended-A combining marks U+08D3–U+08FF). Avoids switching mid-word for
+// regular letters in the Arabic Extended-A block which IndopakNastaleeq does support.
+const WAQF_RE = /[ؐ-ؚۖ-ۭ࣓-ࣿ]/;
 
 function segmentByWaqf(text: string): Array<{ t: string; waqf: boolean }> {
   const segments: Array<{ t: string; waqf: boolean }> = [];

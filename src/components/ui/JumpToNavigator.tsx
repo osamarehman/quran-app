@@ -17,6 +17,8 @@ import { useTheme } from '../../hooks/useTheme';
 
 type Tab = 'page' | 'juz' | 'surah';
 
+const JUZ_NUMBERS = Array.from({ length: 30 }, (_, i) => i + 1);
+
 interface Props {
   visible: boolean;
   mode: MushafMode;
@@ -131,7 +133,7 @@ export default function JumpToNavigator({ visible, mode, onClose, onNavigate }: 
             const itemWidth = (innerWidth - 4 * 8) / 5;
             return (
               <FlatList
-                data={Array.from({ length: 30 }, (_, i) => i + 1)}
+                data={JUZ_NUMBERS}
                 keyExtractor={(item) => `juz-${item}`}
                 numColumns={5}
                 renderItem={({ item }) => (

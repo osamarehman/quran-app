@@ -54,9 +54,17 @@ async function main() {
     }
   }
 
+  const okList = out.filter((r) => r.ok);
+  if (okList.length === 0) {
+    console.error('All reciter probes failed. Refusing to emit empty RECITERS array.');
+    process.exit(1);
+  }
+  if (okList.length < out.length) {
+    process.stderr.write(`warning: ${out.length - okList.length} reciter(s) failed and were excluded\n`);
+  }
+
   console.log('export const RECITERS = [');
-  for (const r of out) {
-    if (!r.ok) continue;
+  for (const r of okList) {
     const lbl = r.label.replace(/'/g, "\\'");
     console.log(`  { id: ${r.id}, label: '${lbl}', urlTemplate: '${r.urlTemplate}' },`);
   }

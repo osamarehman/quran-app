@@ -54,13 +54,18 @@ async function main() {
     }
   }
 
-  console.log('export const JUZ_QUARTER_BOUNDARIES: Record<string, string> = {');
+  // Validate before emitting — refuse to ship a partial table.
   for (let j = 1; j <= 30; j++) {
     const ends = juzRubEnds.get(j) || [];
     if (ends.length < 8) {
-      console.error(`Juz ${j}: only ${ends.length} rub-ends (expected 8)`);
-      continue;
+      console.error(`Juz ${j}: only ${ends.length} rub-ends (expected 8). Aborting.`);
+      process.exit(1);
     }
+  }
+
+  console.log('export const JUZ_QUARTER_BOUNDARIES: Record<string, string> = {');
+  for (let j = 1; j <= 30; j++) {
+    const ends = juzRubEnds.get(j);
     // 8 segments per Juz; take ends at indices 1, 3, 5 (0-indexed) = 2nd, 4th, 6th rub end.
     // These correspond to the LAST verse of Juz 1/4, 1/2, 3/4 segments.
     console.log(`  // Juz ${j}`);

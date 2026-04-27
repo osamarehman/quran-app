@@ -7,7 +7,7 @@ import { useDatabaseInit } from './src/hooks/useDatabase';
 import { useAppStore } from './src/stores/appStore';
 import { getTheme } from './src/theme/colors';
 import { SURAH_LIST } from './src/utils/constants';
-import { playAyah, pauseAudio, resumeAudio, stopAudio, setOnComplete, setAudioSpeed, setReciterId } from './src/utils/audioService';
+import { playAyah, pauseAudio, resumeAudio, stopAudio, setOnComplete, setAudioSpeed, setReciterId, getValidReciterId } from './src/utils/audioService';
 import { getSurahNumberForPage } from './src/db/database';
 import PageSwiper, { PageSwiperRef } from './src/components/mushaf/PageSwiper';
 import Header from './src/components/ui/Header';
@@ -25,11 +25,19 @@ function getSurahForPage(page: number): typeof SURAH_LIST[number] {
 export default function App() {
   // Block first render until Zustand has rehydrated lastReadPage from AsyncStorage,
   // otherwise PageSwiper mounts with the default (page 1) before persisted state loads.
+  // 5s timeout protects against AsyncStorage failures hanging the loading screen forever.
   const [hydrated, setHydrated] = useState(useAppStore.persist.hasHydrated());
   useEffect(() => {
     if (hydrated) return;
     const unsub = useAppStore.persist.onFinishHydration(() => setHydrated(true));
-    return unsub;
+    const timeout = setTimeout(() => {
+      console.warn('[App] hydration timed out; proceeding with defaults');
+      setHydrated(true);
+    }, 5000);
+    return () => {
+      unsub();
+      clearTimeout(timeout);
+    };
   }, [hydrated]);
 
   const mushafMode = useAppStore((s) => s.mushafMode);
@@ -45,6 +53,7 @@ export default function App() {
   const audioEnabled = useAppStore((s) => s.audioEnabled);
   const audioSpeed = useAppStore((s) => s.audioSpeed);
   const selectedQariId = useAppStore((s) => s.selectedQariId);
+  const setSelectedQariId = useAppStore((s) => s.setSelectedQariId);
   const selectedFont = useAppStore((s) => s.selectedFont);
 
   const [currentPage, setCurrentPage] = useState(lastReadPage);
@@ -74,7 +83,9 @@ export default function App() {
         const surah = SURAH_LIST.find((s) => s.number === num);
         if (surah) setCurrentSurahName(surah.name);
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn('[App] getSurahNumberForPage failed for page', currentPage, err);
+      });
   }, [dbReady, mushafMode, currentPage]);
 
   const theme = useMemo(() => getTheme(themeMode), [themeMode]);
@@ -102,8 +113,13 @@ export default function App() {
   }, [audioSpeed]);
 
   useEffect(() => {
-    setReciterId(selectedQariId);
-  }, [selectedQariId]);
+    // If a previously persisted qari id is no longer in the RECITERS list (e.g. after
+    // an upgrade that re-shaped the list), repair the persisted value rather than
+    // silently falling back to a different reciter.
+    const valid = getValidReciterId(selectedQariId);
+    if (valid !== selectedQariId) setSelectedQariId(valid);
+    setReciterId(valid);
+  }, [selectedQariId, setSelectedQariId]);
 
   const [fontsLoaded] = useFonts({
     DigitalKhattIndoPak: require('./assets/fonts/DigitalKhattIndoPak.otf'),
@@ -152,7 +168,8 @@ export default function App() {
           setIsPlaying(true);
         }
       }
-    } catch {
+    } catch (err) {
+      console.error('[App] handleToggleAudio failed', err);
       setIsPlaying(false);
       setAudioAyah(null);
     }
@@ -164,7 +181,8 @@ export default function App() {
       await playAyah(surah, ayah);
       setAudioAyah({ surah, ayah });
       setIsPlaying(true);
-    } catch {
+    } catch (err) {
+      console.error('[App] handleAyahPress failed', surah, ayah, err);
       setIsPlaying(false);
       setAudioAyah(null);
     }
