@@ -125,24 +125,30 @@ export default function JumpToNavigator({ visible, mode, onClose, onNavigate }: 
             </View>
           )}
 
-          {activeTab === 'juz' && (
-            <FlatList
-              data={Array.from({ length: 30 }, (_, i) => i + 1)}
-              keyExtractor={(item) => `juz-${item}`}
-              numColumns={5}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.juzItem, { width: (width - 72) / 5, backgroundColor: theme.surface }]}
-                  onPress={() => handleJuzPress(item)}
-                  accessibilityLabel={`Juz ${item}`}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.juzText, { color: theme.text }]}>{item}</Text>
-                </TouchableOpacity>
-              )}
-              contentContainerStyle={styles.juzList}
-            />
-          )}
+          {activeTab === 'juz' && (() => {
+            // Modal width = width - 32; modal padding 16 each side; 5 columns separated by 4 gaps of 8px each
+            const innerWidth = width - 32 - 32;
+            const itemWidth = (innerWidth - 4 * 8) / 5;
+            return (
+              <FlatList
+                data={Array.from({ length: 30 }, (_, i) => i + 1)}
+                keyExtractor={(item) => `juz-${item}`}
+                numColumns={5}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[styles.juzItem, { width: itemWidth, backgroundColor: theme.surface }]}
+                    onPress={() => handleJuzPress(item)}
+                    accessibilityLabel={`Juz ${item}`}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.juzText, { color: theme.text }]}>{item}</Text>
+                  </TouchableOpacity>
+                )}
+                columnWrapperStyle={{ gap: 8, marginBottom: 8 }}
+                contentContainerStyle={styles.juzList}
+              />
+            );
+          })()}
 
           {activeTab === 'surah' && (
             <FlatList
@@ -236,7 +242,6 @@ const styles = StyleSheet.create({
   juzItem: {
     alignItems: 'center',
     paddingVertical: 12,
-    margin: 4,
     borderRadius: 8,
   },
   juzText: {

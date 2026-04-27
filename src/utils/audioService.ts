@@ -1,20 +1,38 @@
 import { createAudioPlayer, AudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { RECITERS } from './constants';
 
 let currentPlayer: AudioPlayer | null = null;
 let onCompleteCallback: (() => void) | null = null;
-let currentReciterId = 7;
+let currentReciterId: number = RECITERS[0].id;
 let currentSpeed = 1.0;
-
-const AUDIO_BASE_URL = 'https://verses.quran.com';
+let audioModeConfigured = false;
 
 export function setReciterId(id: number): void {
   currentReciterId = id;
 }
 
 function getAudioUrl(surah: number, ayah: number): string {
+  const reciter = RECITERS.find((r) => r.id === currentReciterId) ?? RECITERS[0];
   const surahStr = String(surah).padStart(3, '0');
   const ayahStr = String(ayah).padStart(3, '0');
-  return `${AUDIO_BASE_URL}/${currentReciterId}/${surahStr}${ayahStr}.mp3`;
+  return reciter.urlTemplate.replace('{NNNAAA}', `${surahStr}${ayahStr}`);
+}
+
+async function ensureAudioMode(): Promise<void> {
+  if (audioModeConfigured) return;
+  try {
+    await setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: 'doNotMix',
+      interruptionModeAndroid: 'doNotMix',
+      shouldRouteThroughEarpiece: false,
+      allowsRecording: false,
+    });
+    audioModeConfigured = true;
+  } catch (err) {
+    console.warn('[audioService] setAudioModeAsync failed', err);
+  }
 }
 
 export async function stopAudio(): Promise<void> {
@@ -29,10 +47,13 @@ export async function stopAudio(): Promise<void> {
 }
 
 export async function playAyah(surah: number, ayah: number): Promise<void> {
+  await ensureAudioMode();
   await stopAudio();
-  await setAudioModeAsync({ playsInSilentMode: true });
 
-  const player = createAudioPlayer({ uri: getAudioUrl(surah, ayah) });
+  const url = getAudioUrl(surah, ayah);
+  if (__DEV__) console.log('[audioService] playAyah', surah, ayah, url);
+
+  const player = createAudioPlayer({ uri: url });
   player.playbackRate = currentSpeed;
 
   player.addListener('playbackStatusUpdate', (status) => {

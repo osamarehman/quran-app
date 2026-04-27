@@ -170,14 +170,88 @@ export function getSurahForPage(page: number): SurahInfo {
   return surah;
 }
 
+// urlTemplate uses {NNNAAA} placeholder for the 6-digit surah+ayah token (e.g. 002001).
+// Source: derived from quran.com /api/v4/recitations/{id}/by_ayah responses; see scripts/build-reciters.mjs.
 export const RECITERS = [
-  { id: 7,  label: 'Mishary Rashid al-Afasy' },
-  { id: 1,  label: 'Abdul Basit (Murattal)' },
-  { id: 2,  label: 'Abdul Basit (Mujawwad)' },
-  { id: 3,  label: 'Mahmoud Khalil Al-Husary' },
-  { id: 9,  label: 'Saad Al-Ghamdi' },
-  { id: 10, label: 'Muhammad Ayyub' },
+  { id: 7, label: 'Mishari Rashid al-`Afasy', urlTemplate: 'https://verses.quran.com/Alafasy/mp3/{NNNAAA}.mp3' },
+  { id: 2, label: 'AbdulBaset AbdulSamad (Murattal)', urlTemplate: 'https://verses.quran.com/AbdulBaset/Murattal/mp3/{NNNAAA}.mp3' },
+  { id: 1, label: 'AbdulBaset AbdulSamad (Mujawwad)', urlTemplate: 'https://verses.quran.com/AbdulBaset/Mujawwad/mp3/{NNNAAA}.mp3' },
+  { id: 3, label: 'Abdur-Rahman as-Sudais', urlTemplate: 'https://verses.quran.com/Sudais/mp3/{NNNAAA}.mp3' },
+  { id: 4, label: 'Abu Bakr al-Shatri', urlTemplate: 'https://verses.quran.com/Shatri/mp3/{NNNAAA}.mp3' },
+  { id: 5, label: 'Hani ar-Rifai', urlTemplate: 'https://verses.quran.com/Rifai/mp3/{NNNAAA}.mp3' },
+  { id: 6, label: 'Mahmoud Khalil Al-Husary', urlTemplate: 'https://mirrors.quranicaudio.com/everyayah/Husary_64kbps/{NNNAAA}.mp3' },
+  { id: 12, label: 'Mahmoud Khalil Al-Husary (Muallim)', urlTemplate: 'https://mirrors.quranicaudio.com/everyayah/Husary_Muallim_128kbps/{NNNAAA}.mp3' },
+  { id: 9, label: 'Mohamed Siddiq al-Minshawi (Murattal)', urlTemplate: 'https://verses.quran.com/Minshawi/Murattal/mp3/{NNNAAA}.mp3' },
+  { id: 8, label: 'Mohamed Siddiq al-Minshawi (Mujawwad)', urlTemplate: 'https://verses.quran.com/Minshawi/Mujawwad/mp3/{NNNAAA}.mp3' },
+  { id: 10, label: 'Sa`ud ash-Shuraym', urlTemplate: 'https://verses.quran.com/Shuraym/mp3/{NNNAAA}.mp3' },
+  { id: 11, label: 'Mohamed al-Tablawi', urlTemplate: 'https://mirrors.quranicaudio.com/everyayah/Mohammad_al_Tablaway_128kbps/{NNNAAA}.mp3' },
 ] as const;
+
+// Three markers per Juz at the 1/4, 1/2, 3/4 boundaries (90 markers total).
+// Generated from quran.com rub'-al-hizb data via scripts/build-juz-quarters.mjs.
+// Keys are the LAST verse of each quarter (matches HIZB_QUARTER_ENDS convention).
+export const JUZ_QUARTER_BOUNDARIES: Record<string, string> = {
+  // Juz 1
+  '2:43': 'ربع', '2:74': 'نصف', '2:105': 'ثلث',
+  // Juz 2
+  '2:176': 'ربع', '2:202': 'نصف', '2:232': 'ثلث',
+  // Juz 3
+  '2:271': 'ربع', '3:14': 'نصف', '3:51': 'ثلث',
+  // Juz 4
+  '3:132': 'ربع', '3:170': 'نصف', '3:200': 'ثلث',
+  // Juz 5
+  '4:57': 'ربع', '4:87': 'نصف', '4:113': 'ثلث',
+  // Juz 6
+  '4:176': 'ربع', '5:26': 'نصف', '5:50': 'ثلث',
+  // Juz 7
+  '5:108': 'ربع', '6:35': 'نصف', '6:73': 'ثلث',
+  // Juz 8
+  '6:140': 'ربع', '6:165': 'نصف', '7:46': 'ثلث',
+  // Juz 9
+  '7:141': 'ربع', '7:170': 'نصف', '7:206': 'ثلث',
+  // Juz 10
+  '8:75': 'ربع', '9:33': 'نصف', '9:59': 'ثلث',
+  // Juz 11
+  '9:121': 'ربع', '10:25': 'نصف', '10:70': 'ثلث',
+  // Juz 12
+  '11:40': 'ربع', '11:83': 'نصف', '12:6': 'ثلث',
+  // Juz 13
+  '12:100': 'ربع', '13:18': 'نصف', '14:9': 'ثلث',
+  // Juz 14
+  '15:99': 'ربع', '16:50': 'نصف', '16:89': 'ثلث',
+  // Juz 15
+  '17:49': 'ربع', '17:98': 'نصف', '18:31': 'ثلث',
+  // Juz 16
+  '19:21': 'ربع', '19:98': 'نصف', '20:82': 'ثلث',
+  // Juz 17
+  '21:50': 'ربع', '21:112': 'نصف', '22:37': 'ثلث',
+  // Juz 18
+  '23:74': 'ربع', '24:20': 'نصف', '24:52': 'ثلث',
+  // Juz 19
+  '25:77': 'ربع', '26:110': 'نصف', '26:227': 'ثلث',
+  // Juz 20
+  '28:11': 'ربع', '28:50': 'نصف', '28:88': 'ثلث',
+  // Juz 21
+  '30:30': 'ربع', '31:21': 'نصف', '32:30': 'ثلث',
+  // Juz 22
+  '33:59': 'ربع', '34:23': 'نصف', '35:14': 'ثلث',
+  // Juz 23
+  '37:21': 'ربع', '37:144': 'نصف', '38:51': 'ثلث',
+  // Juz 24
+  '39:75': 'ربع', '40:40': 'نصف', '41:8': 'ثلث',
+  // Juz 25
+  '42:26': 'ربع', '43:23': 'نصف', '44:16': 'ثلث',
+  // Juz 26
+  '47:9': 'ربع', '48:17': 'نصف', '49:13': 'ثلث',
+  // Juz 27
+  '53:25': 'ربع', '54:55': 'نصف', '56:74': 'ثلث',
+  // Juz 28
+  '59:10': 'ربع', '61:14': 'نصف', '64:18': 'ثلث',
+  // Juz 29
+  '68:52': 'ربع', '71:28': 'نصف', '74:56': 'ثلث',
+  // Juz 30
+  '81:29': 'ربع', '86:17': 'نصف', '93:11': 'ثلث',
+};
 
 export const MUSHAF_FONTS = [
   { family: 'IndopakNastaleeq',    label: 'Indopak Nastaleeq' },

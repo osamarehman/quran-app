@@ -23,6 +23,15 @@ function getSurahForPage(page: number): typeof SURAH_LIST[number] {
 }
 
 export default function App() {
+  // Block first render until Zustand has rehydrated lastReadPage from AsyncStorage,
+  // otherwise PageSwiper mounts with the default (page 1) before persisted state loads.
+  const [hydrated, setHydrated] = useState(useAppStore.persist.hasHydrated());
+  useEffect(() => {
+    if (hydrated) return;
+    const unsub = useAppStore.persist.onFinishHydration(() => setHydrated(true));
+    return unsub;
+  }, [hydrated]);
+
   const mushafMode = useAppStore((s) => s.mushafMode);
   const themeMode = useAppStore((s) => s.themeMode);
   const lastReadPage = useAppStore((s) => s.lastReadPage);
@@ -39,6 +48,12 @@ export default function App() {
   const selectedFont = useAppStore((s) => s.selectedFont);
 
   const [currentPage, setCurrentPage] = useState(lastReadPage);
+  // After hydration, sync currentPage to the persisted lastReadPage (the initial
+  // useState ran before persist finished loading from AsyncStorage).
+  useEffect(() => {
+    if (hydrated) setCurrentPage(lastReadPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
   const [currentSurahName, setCurrentSurahName] = useState('');
   const [navigatorVisible, setNavigatorVisible] = useState(false);
   const [bookmarksVisible, setBookmarksVisible] = useState(false);
@@ -155,12 +170,12 @@ export default function App() {
     }
   }, [audioEnabled, setIsPlaying]);
 
-  if (!fontsLoaded || !dbReady) {
+  if (!fontsLoaded || !dbReady || !hydrated) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.pageBackground }]}>
         <ActivityIndicator size="large" color={theme.primary} />
         <Text style={[styles.loadingText, { color: theme.text }]}>
-          {!fontsLoaded ? 'Loading fonts...' : 'Loading Quran data...'}
+          {!fontsLoaded ? 'Loading fonts...' : !hydrated ? 'Restoring last position...' : 'Loading Quran data...'}
         </Text>
         {dbError && (
           <Text style={[styles.errorText, { color: theme.error }]}>{dbError.message}</Text>

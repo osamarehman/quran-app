@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { getPageLines, getWordsForRange } from '../db/database';
 import { PageLine, MushafMode } from '../types/mushaf';
-import { RUKU_ENDS, HIZB_QUARTER_ENDS, JUZ_RUKU, SAJDA_AYAHS, JUZ_STARTS } from '../utils/constants';
+import { RUKU_ENDS, JUZ_QUARTER_BOUNDARIES, JUZ_RUKU, SAJDA_AYAHS, JUZ_STARTS } from '../utils/constants';
 
 export function usePageData(mode: MushafMode, pageNumber: number) {
   const [lines, setLines] = useState<PageLine[]>([]);
@@ -71,7 +71,7 @@ export function usePageData(mode: MushafMode, pageNumber: number) {
             endSurahNumber: lineSurah,
             rukuNumber: hasRukuMark && ayahKey ? RUKU_ENDS[ayahKey] : undefined,
             juzRukuNumber: hasRukuMark && ayahKey ? JUZ_RUKU[ayahKey] : undefined,
-            hizbMarker: ayahKey ? HIZB_QUARTER_ENDS[ayahKey] : undefined,
+            hizbMarker: ayahKey ? JUZ_QUARTER_BOUNDARIES[ayahKey] : undefined,
             sajdaMarker: ayahKey && SAJDA_AYAHS.has(ayahKey) ? true : undefined,
           };
         });

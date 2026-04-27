@@ -23,7 +23,9 @@ function toArabicNumeral(n: number): string {
   return String(n).split('').map(d => EASTERN_ARABIC[+d]).join('');
 }
 
-const WAQF_RE = /[ۖ-ۛ]/;
+// Quranic combining marks not present in IndopakNastaleeq — render via UthmanicHafs.
+// Covers waqf marks (U+06D6–U+06ED), Arabic Extended-A symbols (U+08A0+), and small high marks (U+0610–U+061A).
+const WAQF_RE = /[ؐ-ؚۖ-ۭࢠ-ࣿ]/;
 
 function segmentByWaqf(text: string): Array<{ t: string; waqf: boolean }> {
   const segments: Array<{ t: string; waqf: boolean }> = [];
@@ -51,27 +53,6 @@ function segmentByWaqf(text: string): Array<{ t: string; waqf: boolean }> {
   }
   if (buf) segments.push({ t: buf, waqf: prevWaqf });
   return segments;
-}
-
-function WordToken({ text, style, fontFamily, inkColor }: {
-  text: string; style: object; fontFamily: string; inkColor: string;
-}) {
-  const hasWaqf = WAQF_RE.test(text);
-
-  if (hasWaqf) {
-    const segments = segmentByWaqf(text);
-    return (
-      <Text style={style}>
-        {segments.map((seg, i) =>
-          seg.waqf
-            ? <Text key={i} style={{ fontFamily: 'UthmanicHafs', color: inkColor }}>{seg.t}</Text>
-            : <Text key={i}>{seg.t}</Text>
-        )}
-      </Text>
-    );
-  }
-
-  return <Text style={style}>{text}</Text>;
 }
 
 const MushafLine = React.memo(function MushafLine({
@@ -214,18 +195,40 @@ const MushafLine = React.memo(function MushafLine({
       );
     }
 
+    // Render the full line as a single <Text> so adjustsFontSizeToFit can shrink it
+    // to fit the line width. Words containing waqf marks are split into nested <Text>
+    // segments so the Uthmanic font can render the marks the Indopak font lacks.
+    const children: React.ReactNode[] = [];
+    words.forEach((word, i) => {
+      if (i > 0) children.push(' ');
+      if (WAQF_RE.test(word)) {
+        const segments = segmentByWaqf(word);
+        segments.forEach((seg, j) => {
+          if (seg.waqf) {
+            children.push(
+              <Text key={`${i}-${j}`} style={{ fontFamily: 'UthmanicHafs', color: textColor }}>
+                {seg.t}
+              </Text>
+            );
+          } else {
+            children.push(<Text key={`${i}-${j}`}>{seg.t}</Text>);
+          }
+        });
+      } else {
+        children.push(word);
+      }
+    });
+
     return (
-      <View style={styles.wordRow}>
-        {words.map((word, i) => (
-          <WordToken
-            key={i}
-            text={word}
-            style={textStyle}
-            fontFamily={fontFamily}
-            inkColor={inkColor}
-          />
-        ))}
-      </View>
+      <Text
+        style={[textStyle, styles.lineText]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}
+        allowFontScaling={false}
+      >
+        {children}
+      </Text>
     );
   }
 
@@ -263,11 +266,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
-  wordRow: {
+  lineText: {
     flex: 1,
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    textAlign: 'justify',
+    writingDirection: 'rtl',
   },
   centeredWrap: {
     flex: 1,

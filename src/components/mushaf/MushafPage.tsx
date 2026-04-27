@@ -20,7 +20,7 @@ interface Props {
 const AnimatedView = Animated.createAnimatedComponent(View);
 
 const PAGE_MARGIN = 8;
-const SIDEBAR_WIDTH = 24;
+const SIDEBAR_WIDTH = 32;
 const META_STRIP_HEIGHT = 22;
 
 const EASTERN_ARABIC = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
@@ -121,23 +121,23 @@ const MushafPage = React.memo(function MushafPage({
             >
               {line.rukuNumber != null && (
                 <>
-                  <Text style={{ fontSize: 8, color: theme.mushafInk, lineHeight: 10 }}>
+                  <Text style={{ fontSize: 11, color: theme.mushafInk, lineHeight: 13 }}>
                     {'ع' + toArabicNumeral(line.rukuNumber)}
                   </Text>
                   {line.juzRukuNumber != null && (
-                    <Text style={{ fontSize: 8, color: theme.mushafInk, lineHeight: 10, opacity: 0.6 }}>
+                    <Text style={{ fontSize: 11, color: theme.mushafInk, lineHeight: 13, opacity: 0.6 }}>
                       {'ع' + toArabicNumeral(line.juzRukuNumber)}
                     </Text>
                   )}
                 </>
               )}
               {line.hizbMarker && (
-                <Text style={{ fontSize: 7, color: theme.mushafInk, lineHeight: 9 }}>
+                <Text style={{ fontSize: 10, color: theme.mushafInk, lineHeight: 12 }} numberOfLines={1} adjustsFontSizeToFit>
                   {line.hizbMarker}
                 </Text>
               )}
               {line.sajdaMarker && (
-                <Text style={{ fontSize: 6, color: theme.mushafInk, lineHeight: 8 }}>
+                <Text style={{ fontSize: 9, color: theme.mushafInk, lineHeight: 11 }} numberOfLines={1} adjustsFontSizeToFit>
                   {'سجدة'}
                 </Text>
               )}
