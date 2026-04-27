@@ -7,8 +7,8 @@ import { useDatabaseInit } from './src/hooks/useDatabase';
 import { useAppStore } from './src/stores/appStore';
 import { getTheme } from './src/theme/colors';
 import { SURAH_LIST } from './src/utils/constants';
-import { playAyah, pauseAudio, resumeAudio, stopAudio, setOnComplete, setAudioSpeed, setReciterId, getValidReciterId } from './src/utils/audioService';
-import { getSurahNumberForPage } from './src/db/database';
+import { playAyah, pauseAudio, resumeAudio, stopAudio, setOnComplete, setAudioSpeed, setReciterId, getValidReciterId, preloadAyah } from './src/utils/audioService';
+import { getSurahNumberForPage, getPageForSurah } from './src/db/database';
 import PageSwiper, { PageSwiperRef } from './src/components/mushaf/PageSwiper';
 import Header from './src/components/ui/Header';
 import JumpToNavigator from './src/components/ui/JumpToNavigator';
@@ -20,6 +20,16 @@ function getSurahForPage(page: number): typeof SURAH_LIST[number] {
     if (SURAH_LIST[i].page <= page) return SURAH_LIST[i];
   }
   return SURAH_LIST[0];
+}
+
+// Returns the ayah immediately following (surah, ayah), wrapping into the next
+// surah at end-of-surah, or null at end of mushaf.
+function nextAyahAfter(surahNumber: number, ayahNumber: number): { surah: number; ayah: number } | null {
+  const surah = SURAH_LIST.find((s) => s.number === surahNumber);
+  if (!surah) return null;
+  if (ayahNumber + 1 <= surah.verses) return { surah: surahNumber, ayah: ayahNumber + 1 };
+  if (surahNumber + 1 > 114) return null;
+  return { surah: surahNumber + 1, ayah: 1 };
 }
 
 export default function App() {
@@ -68,6 +78,12 @@ export default function App() {
   const [bookmarksVisible, setBookmarksVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [audioAyah, setAudioAyah] = useState<{ surah: number; ayah: number } | null>(null);
+  // Ref mirror of audioAyah so the long-lived onComplete callback can read the
+  // latest value without needing the effect to re-register on every change.
+  const audioAyahRef = useRef(audioAyah);
+  useEffect(() => {
+    audioAyahRef.current = audioAyah;
+  }, [audioAyah]);
   const { ready: dbReady, error: dbError } = useDatabaseInit();
   const swiperRef = useRef<PageSwiperRef>(null);
   const surahQueryId = useRef(0);
@@ -91,9 +107,35 @@ export default function App() {
   const theme = useMemo(() => getTheme(themeMode), [themeMode]);
 
   useEffect(() => {
+    // When the current ayah finishes naturally, auto-advance to the next ayah
+    // (continuing into the next surah at end-of-surah) and keep playing. Tapping
+    // a different ayah or hitting pause overrides this chain via the normal
+    // handlers — they call playAyah/pauseAudio which cancel any pending advance.
     setOnComplete(() => {
-      setIsPlaying(false);
-      setAudioAyah(null);
+      const current = audioAyahRef.current;
+      if (!current) {
+        setIsPlaying(false);
+        return;
+      }
+      const next = nextAyahAfter(current.surah, current.ayah);
+      if (!next) {
+        // End of mushaf — stop the chain.
+        setIsPlaying(false);
+        setAudioAyah(null);
+        return;
+      }
+      setAudioAyah(next);
+      playAyah(next.surah, next.ayah)
+        .then(() => {
+          // Preload the one after so the next gap-free swap can happen too.
+          const after = nextAyahAfter(next.surah, next.ayah);
+          if (after) preloadAyah(after.surah, after.ayah);
+        })
+        .catch((err) => {
+          console.error('[App] auto-advance failed', next.surah, next.ayah, err);
+          setIsPlaying(false);
+          setAudioAyah(null);
+        });
     });
     return () => {
       setOnComplete(null);
@@ -126,6 +168,7 @@ export default function App() {
     IndopakNastaleeq: require('./assets/fonts/indopak-nastaleeq.ttf'),
     AmiriQuran: require('./assets/fonts/AmiriQuran.ttf'),
     UthmanicHafs: require('./assets/fonts/UthmanicHafs.ttf'),
+    AlQuranIndoPak: require('./assets/fonts/AlQuranIndoPak.ttf'),
   });
 
   const handlePageChange = useCallback(
@@ -136,10 +179,25 @@ export default function App() {
     [setLastReadPage]
   );
 
-  const handleToggleMode = useCallback(() => {
+  const handleToggleMode = useCallback(async () => {
     const next = mushafMode === '16-line' ? '15-line' : '16-line';
+    // Page numbers don't align between the two modes — pages are laid out
+    // differently. Look up the current surah and jump to its first page in
+    // the target mode so the user keeps reading where they left off.
+    let targetPage = 1;
+    try {
+      const surahNumber = await getSurahNumberForPage(mushafMode, currentPage);
+      if (surahNumber) {
+        const page = await getPageForSurah(next, surahNumber);
+        if (page) targetPage = page;
+      }
+    } catch (err) {
+      console.warn('[App] mode-switch lookup failed', err);
+    }
+    setLastReadPage(targetPage);
+    setCurrentPage(targetPage);
     setMushafMode(next);
-  }, [mushafMode, setMushafMode]);
+  }, [mushafMode, currentPage, setMushafMode, setLastReadPage]);
 
   const handleNavigate = useCallback(
     (page: number) => {
@@ -166,6 +224,8 @@ export default function App() {
           await playAyah(surah.number, 1);
           setAudioAyah({ surah: surah.number, ayah: 1 });
           setIsPlaying(true);
+          const after = nextAyahAfter(surah.number, 1);
+          if (after) preloadAyah(after.surah, after.ayah);
         }
       }
     } catch (err) {
@@ -181,6 +241,8 @@ export default function App() {
       await playAyah(surah, ayah);
       setAudioAyah({ surah, ayah });
       setIsPlaying(true);
+      const after = nextAyahAfter(surah, ayah);
+      if (after) preloadAyah(after.surah, after.ayah);
     } catch (err) {
       console.error('[App] handleAyahPress failed', surah, ayah, err);
       setIsPlaying(false);
@@ -223,6 +285,9 @@ export default function App() {
         onOpenSettings={() => setSettingsVisible(true)}
       />
       <PageSwiper
+        // Remount when mode changes so initialPage applies in the new mode
+        // (page numbers don't align between 15-line and 16-line layouts).
+        key={mushafMode}
         ref={swiperRef}
         mode={mushafMode}
         initialPage={lastReadPage}

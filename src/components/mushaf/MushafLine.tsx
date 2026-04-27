@@ -1,5 +1,5 @@
-﻿import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+﻿import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, LayoutChangeEvent } from 'react-native';
 import { PageLine } from '../../types/mushaf';
 import { SURAH_LIST, SURAH_RUKU_COUNT } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
@@ -12,7 +12,7 @@ interface Props {
   fontFamily: string;
   isFirst?: boolean;
   isLast?: boolean;
-  onPress?: () => void;
+  onAyahPress?: (surah: number, ayah: number) => void;
   showBasmallah?: boolean;
 }
 
@@ -23,11 +23,17 @@ function toArabicNumeral(n: number): string {
   return String(n).split('').map(d => EASTERN_ARABIC[+d]).join('');
 }
 
-// Quranic combining marks not present in IndopakNastaleeq — render via UthmanicHafs.
-// Restricted to MARKS only (small high marks U+0610–U+061A, waqf signs U+06D6–U+06ED,
-// Arabic Extended-A combining marks U+08D3–U+08FF). Avoids switching mid-word for
-// regular letters in the Arabic Extended-A block which IndopakNastaleeq does support.
+// Quranic combining marks. The primary mushaf font (AlQuranIndoPak) renders
+// these correctly so we no longer need to swap to UthmanicHafs mid-word —
+// keeping the regex around in case we need to special-case rendering.
+// Restricted to MARKS only (small high marks U+0610–U+061A, waqf signs
+// U+06D6–U+06ED, Arabic Extended-A combining marks U+08D3–U+08FF).
 const WAQF_RE = /[ؐ-ؚۖ-ۭ࣓-ࣿ]/;
+// Detect a token that's just an end-of-ayah marker (U+06DD) followed by digits.
+// e.g. "۝٣". These should attach to the preceding word and render in
+// UthmanicHafs (which has the contextual sub that puts the digit inside the
+// ornate circle). IndopakNastaleeq doesn't, so the digit dangles huge.
+const AYAH_END_RE = /^۝[٠-٩۰-۹]*$/;
 
 function segmentByWaqf(text: string): Array<{ t: string; waqf: boolean }> {
   const segments: Array<{ t: string; waqf: boolean }> = [];
@@ -57,6 +63,174 @@ function segmentByWaqf(text: string): Array<{ t: string; waqf: boolean }> {
   return segments;
 }
 
+type FittedWord = { surah: number; ayah: number; text: string };
+
+interface FittedWordRowProps {
+  line: PageLine;
+  wordContent: string;
+  baseFontSize: number;
+  textStyle: { fontSize: number; fontFamily: string; color: string };
+  onAyahPress?: (surah: number, ayah: number) => void;
+  textColor: string;
+}
+
+// Renders the words flex-justified across the row, with a hidden mirror
+// <Text> measured via onTextLayout to decide if/how much to shrink.
+//
+// onTextLayout reports shaping-aware width — it accounts for cursive glyph
+// extensions that per-word `onLayout` misses. We render the same content
+// invisibly with `numberOfLines` removed and width clamped to the container;
+// if the layout engine had to wrap to multiple lines (or report a single line
+// wider than the container), we know the natural width exceeds the row and
+// can compute the exact scale needed. Single-pass, no iteration.
+const FittedWordRow = React.memo(function FittedWordRow({
+  line,
+  wordContent,
+  baseFontSize,
+  textStyle,
+  onAyahPress,
+  textColor,
+}: FittedWordRowProps) {
+  // Build the per-word list ONCE inside the component, memoized on the line's
+  // identity so React.memo on the parent works as intended.
+  const words = useMemo<FittedWord[]>(() => {
+    const fallbackSurah = line.endSurahNumber ?? line.surah_number ?? 0;
+    const fallbackAyah = line.endAyahNumber ?? line.ayahNumber ?? 0;
+    const segs = line.ayahSegments && line.ayahSegments.length > 0
+      ? line.ayahSegments
+      : [{ surah: fallbackSurah, ayah: fallbackAyah, text: wordContent }];
+    const out: FittedWord[] = [];
+    for (const seg of segs) {
+      const raw = seg.text.split(' ').filter(Boolean);
+      const merged: string[] = [];
+      for (const tok of raw) {
+        const isWaqfOnly = Array.from(tok).every((ch) => WAQF_RE.test(ch));
+        const isAyahEnd = AYAH_END_RE.test(tok);
+        if (merged.length > 0 && (isWaqfOnly || isAyahEnd)) {
+          merged[merged.length - 1] += ' ' + tok;
+        } else {
+          merged.push(tok);
+        }
+      }
+      for (const word of merged) {
+        out.push({ surah: seg.surah, ayah: seg.ayah, text: word });
+      }
+    }
+    return out;
+  }, [line, wordContent]);
+
+  const renderContent = useCallback((text: string, keyPrefix: string): React.ReactNode => {
+    // Always wrap output in <Text> nodes so the row's per-word layout is
+    // structurally consistent across words. Waqf marks inherit the parent's
+    // primary font. The ayah-end token (۝ + digits) renders in UthmanicHafs
+    // which has the OpenType contextual substitution that places the digit
+    // inside the ornate end-of-ayah circle.
+    const ayahEndMatch = text.match(/\s*(۝[٠-٩۰-۹]*)$/);
+    let baseText = text;
+    let ayahEndNode: React.ReactNode = null;
+    if (ayahEndMatch) {
+      baseText = text.slice(0, ayahEndMatch.index!);
+      ayahEndNode = (
+        <React.Fragment key={`${keyPrefix}-end`}>
+          <Text> </Text>
+          <Text style={{ fontFamily: 'UthmanicHafs', color: textColor }}>
+            {ayahEndMatch[1]}
+          </Text>
+        </React.Fragment>
+      );
+    }
+
+    const parts: React.ReactNode[] = [];
+    if (baseText) {
+      parts.push(<Text key={`${keyPrefix}-b`}>{baseText}</Text>);
+    }
+    if (ayahEndNode) parts.push(ayahEndNode);
+    return parts;
+  }, [textColor]);
+
+  const [scale, setScale] = useState(1);
+  const containerWidthRef = useRef(0);
+  const settledRef = useRef(false);
+
+  useEffect(() => {
+    setScale(1);
+    settledRef.current = false;
+  }, [words, baseFontSize]);
+
+  const onContainerLayout = useCallback((e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width;
+    if (Math.abs(w - containerWidthRef.current) < 0.5) return;
+    const hadPrev = containerWidthRef.current > 0;
+    containerWidthRef.current = w;
+    if (hadPrev) {
+      settledRef.current = false;
+      if (scale !== 1) setScale(1);
+    }
+  }, [scale]);
+
+  // Hidden mirror reports actual shaping-aware text width via onTextLayout.
+  // We render at the FULL baseFontSize with width clamped to the container; if
+  // the text needs > 1 line, the natural single-line width = sum of lines.
+  const onMirrorTextLayout = useCallback((e: { nativeEvent: { lines: Array<{ width: number }> } }) => {
+    if (settledRef.current) return;
+    const cw = containerWidthRef.current;
+    if (cw <= 0) return;
+    const lines = e.nativeEvent.lines;
+    if (!lines || lines.length === 0) return;
+    settledRef.current = true;
+    // Sum of all reported line widths = the width the text would need to fit
+    // on a single unconstrained line. Includes shaping/glyph extents.
+    const trueWidth = lines.reduce((acc, l) => acc + l.width, 0);
+    // Headroom scales with word count — denser lines need more safety because
+    // shaping interactions between adjacent words add up.
+    const headroom = 4 + Math.max(0, words.length - 4) * 0.4;
+    if (trueWidth > cw - headroom) {
+      // Add a 4 % cushion for any residual variance between mirror layout and
+      // the visible flex layout's per-glyph advance.
+      const next = Math.max(0.45, (cw - headroom) / trueWidth * 0.96);
+      setScale(next);
+    }
+  }, [words.length]);
+
+  const fontSize = baseFontSize * scale;
+  const wordStyle = { ...textStyle, fontSize };
+
+  return (
+    <View style={styles.wordRow} onLayout={onContainerLayout}>
+      {/* Hidden measurement mirror — same content, baseFontSize, NO scale.
+          Width clamped so onTextLayout reports per-line widths (one or more). */}
+      <View
+        pointerEvents="none"
+        style={[styles.mirror, { width: containerWidthRef.current || 1 }]}
+      >
+        <Text
+          style={[textStyle, { fontSize: baseFontSize }]}
+          onTextLayout={onMirrorTextLayout}
+          allowFontScaling={false}
+        >
+          {words.map((w, i) => (
+            <React.Fragment key={i}>
+              {i > 0 ? ' ' : ''}
+              {renderContent(w.text, `m${i}`)}
+            </React.Fragment>
+          ))}
+        </Text>
+      </View>
+
+      {words.map((w, i) => (
+        <Text
+          key={i}
+          onPress={onAyahPress ? () => onAyahPress(w.surah, w.ayah) : undefined}
+          style={wordStyle}
+          allowFontScaling={false}
+        >
+          {renderContent(w.text, String(i))}
+        </Text>
+      ))}
+    </View>
+  );
+});
+
 const MushafLine = React.memo(function MushafLine({
   line,
   fontSize,
@@ -64,7 +238,7 @@ const MushafLine = React.memo(function MushafLine({
   fontFamily,
   isFirst,
   isLast,
-  onPress,
+  onAyahPress,
   showBasmallah,
 }: Props) {
   const theme = useTheme();
@@ -96,6 +270,10 @@ const MushafLine = React.memo(function MushafLine({
 
   const isJuzStart = line.line_type === 'basmallah';
   const isSurahName = line.line_type === 'surah_name';
+  // Mid-surah Juz first line — invert styling so the boundary is obvious.
+  // (New-surah Juz starts already get visual emphasis via the basmallah row.)
+  const isJuzFirstAyah = !!line.isJuzFirstLine;
+  const inverted = isSurahName || isJuzStart || isJuzFirstAyah;
 
   const containerStyle = [
     styles.container,
@@ -116,11 +294,18 @@ const MushafLine = React.memo(function MushafLine({
         borderTopColor: theme.mushafInk,
         borderBottomColor: theme.mushafInk,
       }),
+      ...(isJuzFirstAyah && {
+        backgroundColor: theme.mushafInk,
+        borderTopWidth: isFirst ? 0 : 2,
+        borderBottomWidth: isLast ? 0 : 2,
+        borderTopColor: theme.mushafInk,
+        borderBottomColor: theme.mushafInk,
+      }),
     },
   ];
 
   const inkColor = theme.mushafInk;
-  const textColor = (isSurahName || isJuzStart) ? theme.mushafPaper : theme.mushafInk;
+  const textColor = inverted ? theme.mushafPaper : theme.mushafInk;
   const textStyle = { fontSize, fontFamily, color: textColor };
 
   function renderInner(): React.ReactElement {
@@ -197,63 +382,23 @@ const MushafLine = React.memo(function MushafLine({
       );
     }
 
-    // Render the full line as a single <Text> so adjustsFontSizeToFit can shrink it
-    // to fit the line width. Words containing waqf marks are split into nested <Text>
-    // segments so the Uthmanic font can render the marks the Indopak font lacks.
-    const children: React.ReactNode[] = [];
-    words.forEach((word, i) => {
-      if (i > 0) children.push(' ');
-      if (WAQF_RE.test(word)) {
-        const segments = segmentByWaqf(word);
-        segments.forEach((seg, j) => {
-          if (seg.waqf) {
-            children.push(
-              <Text key={`${i}-${j}`} style={{ fontFamily: 'UthmanicHafs', color: textColor }}>
-                {seg.t}
-              </Text>
-            );
-          } else {
-            children.push(<Text key={`${i}-${j}`}>{seg.t}</Text>);
-          }
-        });
-      } else {
-        children.push(word);
-      }
-    });
-
     return (
-      <Text
-        style={[textStyle, styles.lineText]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.5}
-        allowFontScaling={false}
-      >
-        {children}
-      </Text>
+      <FittedWordRow
+        line={line}
+        wordContent={wordContent}
+        baseFontSize={fontSize}
+        textStyle={textStyle}
+        onAyahPress={onAyahPress}
+        textColor={textColor}
+      />
     );
   }
 
-  const content = (
+  return (
     <View style={containerStyle}>
       <View style={styles.lineContent}>{renderInner()}</View>
     </View>
   );
-
-  if (line.line_type === 'ayah' && onPress) {
-    return (
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.6}
-        accessibilityRole="button"
-        accessibilityLabel={`Surah ${line.surah_number}, Ayah ${line.ayahNumber}`}
-      >
-        {content}
-      </TouchableOpacity>
-    );
-  }
-
-  return content;
 });
 
 const styles = StyleSheet.create({
@@ -266,12 +411,20 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'stretch',
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
-  lineText: {
+  wordRow: {
     flex: 1,
-    textAlign: 'justify',
-    writingDirection: 'rtl',
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  mirror: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    opacity: 0,
   },
   centeredWrap: {
     flex: 1,

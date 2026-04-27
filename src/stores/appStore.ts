@@ -36,7 +36,7 @@ export const useAppStore = create<AppState>()(
       audioSpeed: 1.0,
       audioEnabled: true,
       selectedQariId: 7,
-      selectedFont: 'IndopakNastaleeq',
+      selectedFont: 'AlQuranIndoPak',
       setMushafMode: (mode) => set({ mushafMode: mode }),
       setThemeMode: (mode) => set({ themeMode: mode }),
       setLastReadPage: (page) => set({ lastReadPage: page }),

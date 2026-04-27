@@ -254,6 +254,7 @@ export const JUZ_QUARTER_BOUNDARIES: Record<string, string> = {
 };
 
 export const MUSHAF_FONTS = [
+  { family: 'AlQuranIndoPak',      label: 'AlQuran IndoPak (QuranWBW)' },
   { family: 'IndopakNastaleeq',    label: 'Indopak Nastaleeq' },
   { family: 'DigitalKhattIndoPak', label: 'Digital Khatt IndoPak' },
   { family: 'UthmanicHafs',        label: 'Uthmanic Hafs (KFGQPC)' },
@@ -282,17 +283,17 @@ export const MUSHAF_CONFIG = {
     dbName: 'qudratullah-indopak-15-lines.db',
     pages: 610,
     linesPerPage: 15,
-    fontSize: 22,
-    lineHeight: 36,
-    fontFamily: 'IndopakNastaleeq',
+    fontSize: 19,
+    lineHeight: 34,
+    fontFamily: 'AlQuranIndoPak',
   },
   '16-line': {
     dbName: 'taj-indopak-16-lines.db',
     pages: 548,
     linesPerPage: 16,
-    fontSize: 20,
-    lineHeight: 32,
-    fontFamily: 'IndopakNastaleeq',
+    fontSize: 19,
+    lineHeight: 30,
+    fontFamily: 'AlQuranIndoPak',
   },
 } as const;
 

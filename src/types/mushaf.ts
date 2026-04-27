@@ -18,6 +18,12 @@ export interface PageLine {
   sajdaMarker?: boolean;
   endAyahNumber?: number;
   endSurahNumber?: number;
+  // Per-ayah word groups so a line that spans multiple ayahs can render
+  // one Pressable per ayah (correct hit target + correct audio).
+  ayahSegments?: Array<{ surah: number; ayah: number; text: string }>;
+  // True when this line is the first line of a new Juz (used to render the
+  // line with inverted styling so the boundary stands out).
+  isJuzFirstLine?: boolean;
 }
 
 export interface WordRecord {

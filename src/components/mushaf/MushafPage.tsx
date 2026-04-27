@@ -20,7 +20,7 @@ interface Props {
 const AnimatedView = Animated.createAnimatedComponent(View);
 
 const PAGE_MARGIN = 8;
-const SIDEBAR_WIDTH = 32;
+const SIDEBAR_WIDTH = 26;
 const META_STRIP_HEIGHT = 22;
 
 const EASTERN_ARABIC = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
@@ -177,11 +177,6 @@ const MushafPage = React.memo(function MushafPage({
                 line.surah_number !== 9 &&
                 line.surah_number !== 1;
 
-              const handlePress =
-                line.line_type === 'ayah' && line.endSurahNumber && line.ayahNumber && onAyahPress
-                  ? () => onAyahPress(line.endSurahNumber!, line.ayahNumber!)
-                  : undefined;
-
               return (
                 <MushafLine
                   key={`${pageNumber}-${line.line_number}`}
@@ -192,7 +187,7 @@ const MushafPage = React.memo(function MushafPage({
                   isFirst={index === 0}
                   isLast={index === displayLines.length - 1}
                   showBasmallah={showBasmallah}
-                  onPress={handlePress}
+                  onAyahPress={line.line_type === 'ayah' ? onAyahPress : undefined}
                 />
               );
             })}
