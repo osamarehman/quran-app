@@ -34,7 +34,10 @@ migrate_working_dir/
 app.*.symbols
 app.*.map.json
 
-# Android Studio build artifacts
+# Android Studio / Gradle build artifacts
+/android/.gradle/
+/android/build/
+/android/app/build/
 /android/app/debug
 /android/app/profile
 /android/app/release

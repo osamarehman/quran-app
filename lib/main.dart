@@ -382,12 +382,16 @@ class MushafLineWidget extends StatelessWidget {
   }
 }
 
-const _arabicTextStyle = TextStyle(
+const _baseFontSize = 28.0;
+const _baseTextStyle = TextStyle(
   fontFamily: 'IndopakNastaleeq',
-  fontSize: 28,
+  fontSize: _baseFontSize,
   height: 1.0,
   color: Color(0xFF111111),
 );
+// Minimum visual gap between words even when a line is at full font size.
+// Without this, spaceBetween can produce zero-gap lines that read as run-on.
+const _minWordGap = 4.0;
 
 class _AyahLine extends StatelessWidget {
   final List<MushafWord> words;
@@ -398,22 +402,46 @@ class _AyahLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (words.isEmpty) return const SizedBox.shrink();
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Row(
-        mainAxisAlignment: isCentered
-            ? MainAxisAlignment.center
-            : MainAxisAlignment.spaceBetween,
-        children: [
-          for (final w in words)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _onWordTap(context, w),
-              child: Text(w.text, style: _arabicTextStyle),
-            ),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final style = _fitStyle(words, constraints.maxWidth);
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Row(
+            mainAxisAlignment: isCentered
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.spaceBetween,
+            children: [
+              for (final w in words)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _onWordTap(context, w),
+                  child: Text(w.text, style: style),
+                ),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  // Returns a TextStyle whose fontSize is scaled down from _baseFontSize so
+  // that the words fit edge-to-edge with at least _minWordGap between each.
+  // No-op when the line already fits at base size.
+  static TextStyle _fitStyle(List<MushafWord> words, double maxWidth) {
+    if (words.length < 2 || maxWidth <= 0) return _baseTextStyle;
+    double totalWordWidth = 0;
+    for (final w in words) {
+      final tp = TextPainter(
+        text: TextSpan(text: w.text, style: _baseTextStyle),
+        textDirection: TextDirection.rtl,
+      )..layout();
+      totalWordWidth += tp.size.width;
+    }
+    final neededWidth = totalWordWidth + _minWordGap * (words.length - 1);
+    if (neededWidth <= maxWidth) return _baseTextStyle;
+    final scale = maxWidth / neededWidth;
+    return _baseTextStyle.copyWith(fontSize: _baseFontSize * scale);
   }
 
   void _onWordTap(BuildContext context, MushafWord w) {
