@@ -23,6 +23,40 @@ class _PageData {
   _PageData(this.lines, this.wordsByLine);
 }
 
+/// Returns (primarySurah, firstAyahSurah, firstAyahNumber) for the page.
+/// Primary surah prefers surah_name lines, else falls back to the smallest
+/// surah_number on the page (or first word's surah). First ayah is taken
+/// from the first ayah-typed line's first word.
+(int, int, int) _resolvePagePrimary(_PageData data) {
+  int? primary;
+  for (final l in data.lines) {
+    if (l.lineType == 'surah_name' && l.surahNumber != null) {
+      primary = l.surahNumber;
+      break;
+    }
+  }
+  // First word on the page (in line order) gives first-ayah surah/number.
+  int? firstSurah;
+  int? firstAyah;
+  for (final l in data.lines) {
+    final words = data.wordsByLine[l.lineNumber];
+    if (words != null && words.isNotEmpty) {
+      firstSurah = words.first.surah;
+      firstAyah = words.first.ayah;
+      break;
+    }
+  }
+  if (primary == null) {
+    int? minSurah;
+    for (final l in data.lines) {
+      final s = l.surahNumber;
+      if (s != null && (minSurah == null || s < minSurah)) minSurah = s;
+    }
+    primary = minSurah ?? firstSurah ?? 1;
+  }
+  return (primary, firstSurah ?? primary, firstAyah ?? 1);
+}
+
 class MushafPage extends StatefulWidget {
   final MushafDb db;
   final int pageNumber;
@@ -87,10 +121,16 @@ class _MushafPageState extends State<MushafPage> {
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
+        final pageData = snap.data!;
+        final (primarySurah, firstAyahSurah, firstAyahNumber) =
+            _resolvePagePrimary(pageData);
         return PageFrame(
           pageNumber: widget.pageNumber,
+          surahNumber: primarySurah,
+          firstAyahSurah: firstAyahSurah,
+          firstAyahNumber: firstAyahNumber,
           child: _PageBody(
-            data: snap.data!,
+            data: pageData,
             pageNumber: widget.pageNumber,
             onWordTap: widget.onWordTap,
           ),
