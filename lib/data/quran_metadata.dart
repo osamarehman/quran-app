@@ -620,3 +620,150 @@ int? rukuNumberInSurah(int surah, int ayah) {
   }
   return null;
 }
+
+/// Ayah count for each of the 114 surahs (1-indexed via .last). Used to
+/// resolve ruku-end positions when a ruku ends at a surah boundary.
+/// Source: alquran.cloud /v1/meta surahs.numberOfAyahs.
+const List<int> kSurahAyahCounts = <int>[
+  7,
+  286,
+  200,
+  176,
+  120,
+  165,
+  206,
+  75,
+  129,
+  109,
+  123,
+  111,
+  43,
+  52,
+  99,
+  128,
+  111,
+  110,
+  98,
+  135,
+  112,
+  78,
+  118,
+  64,
+  77,
+  227,
+  93,
+  88,
+  69,
+  60,
+  34,
+  30,
+  73,
+  54,
+  45,
+  83,
+  182,
+  88,
+  75,
+  85,
+  54,
+  53,
+  89,
+  59,
+  37,
+  35,
+  38,
+  29,
+  18,
+  45,
+  60,
+  49,
+  62,
+  55,
+  78,
+  96,
+  29,
+  22,
+  24,
+  13,
+  14,
+  11,
+  11,
+  18,
+  12,
+  12,
+  30,
+  52,
+  52,
+  44,
+  28,
+  28,
+  20,
+  56,
+  40,
+  31,
+  50,
+  40,
+  46,
+  42,
+  29,
+  19,
+  36,
+  25,
+  22,
+  17,
+  19,
+  26,
+  30,
+  20,
+  15,
+  21,
+  11,
+  8,
+  8,
+  19,
+  5,
+  8,
+  8,
+  11,
+  11,
+  8,
+  3,
+  9,
+  5,
+  4,
+  7,
+  3,
+  6,
+  3,
+  5,
+  4,
+  5,
+  6,
+];
+
+
+/// Returns (surah, ayah) of the LAST ayah of the ruku at [rukuIndex].
+/// For the final ruku, this is the last ayah of the Quran (114, 6).
+(int, int) rukuEndAyah(int rukuIndex) {
+  if (rukuIndex < 0 || rukuIndex >= kRukuStarts.length) {
+    throw RangeError.index(rukuIndex, kRukuStarts);
+  }
+  if (rukuIndex == kRukuStarts.length - 1) {
+    return (114, kSurahAyahCounts.last);
+  }
+  final (curS, _) = kRukuStarts[rukuIndex];
+  final (nextS, nextA) = kRukuStarts[rukuIndex + 1];
+  if (nextS != curS) {
+    return (curS, kSurahAyahCounts[curS - 1]);
+  }
+  return (nextS, nextA - 1);
+}
+
+/// Returns the index of the ruku that ENDS at (surah, ayah), or null if
+/// (surah, ayah) is not the last ayah of any ruku.
+int? rukuEndIndex(int surah, int ayah) {
+  for (var i = 0; i < kRukuStarts.length; i++) {
+    if (rukuEndAyah(i) == (surah, ayah)) return i;
+  }
+  return null;
+}

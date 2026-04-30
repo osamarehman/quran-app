@@ -78,8 +78,10 @@ void main() {
     expect(find.text('ثلاثة'), findsNothing);
   });
 
-  testWidgets('renders ruku glyph for an ayah that starts a ruku', (tester) async {
-    // Al-Baqara 2:8 is the third ruku (kRukuStarts[2]).
+  testWidgets('renders ruku glyph at the END of a ruku', (tester) async {
+    // Ruku 1 of Al-Baqara ends at 2:7 (ruku 2 starts at 2:8). When line A
+    // contains the last word of 2:7 and line B starts at 2:8, the ع badge
+    // renders next to line A.
     final lines = [
       const MushafLine(
         pageNumber: 3,
@@ -89,16 +91,21 @@ void main() {
         firstWordId: 1,
         lastWordId: 1,
       ),
+      const MushafLine(
+        pageNumber: 3,
+        lineNumber: 2,
+        lineType: 'ayah',
+        isCentered: false,
+        firstWordId: 2,
+        lastWordId: 2,
+      ),
     ];
     final wordsByLine = {
       1: const [
-        MushafWord(
-          id: 1,
-          surah: 2,
-          ayah: 8,
-          wordIndex: 1,
-          text: 'وَمِنَ',
-        ),
+        MushafWord(id: 1, surah: 2, ayah: 7, wordIndex: 5, text: 'عَظِيمٌ'),
+      ],
+      2: const [
+        MushafWord(id: 2, surah: 2, ayah: 8, wordIndex: 1, text: 'وَمِنَ'),
       ],
     };
 

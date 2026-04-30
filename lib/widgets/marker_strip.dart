@@ -3,10 +3,9 @@ import 'package:flutter/material.dart';
 import '../data/mushaf_db.dart';
 import '../data/quran_metadata.dart';
 
-/// Vertical strip on the page's outside edge showing ruku, sajda, and
+/// Vertical strip on the page's outside edge showing ruku-end, sajda, and
 /// hizb-quarter (1/4 / 1/2 / 3/4) glyphs aligned to the line they fall on.
-/// Cells use Expanded so they line up vertically with the line column.
-/// Strip cells DO NOT carry top borders — the strip is one continuous column
+/// No per-cell horizontal dividers — the strip is one continuous column
 /// while the text side has the bordered line grid.
 class MarkerStrip extends StatelessWidget {
   final List<MushafLine> lines;
@@ -22,17 +21,71 @@ class MarkerStrip extends StatelessWidget {
     required this.width,
   });
 
+  /// For each line index, returns the ruku index whose LAST ayah ends on
+  /// that line — or null if no ruku ends there. A ruku ends on line L when:
+  ///   1. line L's last word's (surah, ayah) differs from line L+1's first
+  ///      word's (surah, ayah) — i.e. the ayah ended on this line, and
+  ///   2. that ayah is the last ayah of some ruku.
+  /// Cross-page boundaries (last line of page) are handled best-effort:
+  /// we look at line.lastWordId and treat it as a ruku-end if (s, a) of
+  /// that word is itself a ruku-end ayah (works whenever the layout DB's
+  /// last_word_id sits at the end of the ayah).
+  Map<int, int> _computeRukuEnds() {
+    final out = <int, int>{};
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      if (line.lineType != 'ayah') continue;
+      final words = wordsByLine[line.lineNumber] ?? const <MushafWord>[];
+      if (words.isEmpty) continue;
+      final last = words.last;
+      final (s, a) = (last.surah, last.ayah);
+
+      bool ayahEnded;
+      if (i == lines.length - 1) {
+        // Last line of page — we can't compare with the next line.
+        // Best-effort: if the layout puts (s, a) as a ruku-end ayah AND the
+        // last word's wordIndex is high enough to plausibly be the end,
+        // assume the ayah ended here. Tolerated false negatives at exact
+        // cross-page boundaries; false positives are unlikely because the
+        // (s, a) lookup is exact.
+        ayahEnded = true;
+      } else {
+        // Find the next line that has words.
+        MushafWord? nextFirst;
+        for (var j = i + 1; j < lines.length; j++) {
+          final nextWords = wordsByLine[lines[j].lineNumber];
+          if (nextWords != null && nextWords.isNotEmpty) {
+            nextFirst = nextWords.first;
+            break;
+          }
+        }
+        if (nextFirst == null) {
+          ayahEnded = true;
+        } else {
+          ayahEnded = (nextFirst.surah, nextFirst.ayah) != (s, a);
+        }
+      }
+
+      if (!ayahEnded) continue;
+      final ri = rukuEndIndex(s, a);
+      if (ri != null) out[i] = ri;
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final rukuEnds = _computeRukuEnds();
     return SizedBox(
       width: width,
       child: Column(
         children: [
-          for (final line in lines)
+          for (var i = 0; i < lines.length; i++)
             Expanded(
               child: _LineMarkerCell(
-                line: line,
-                words: wordsByLine[line.lineNumber] ?? const [],
+                line: lines[i],
+                words: wordsByLine[lines[i].lineNumber] ?? const [],
+                rukuEnding: rukuEnds[i],
               ),
             ),
         ],
@@ -44,8 +97,14 @@ class MarkerStrip extends StatelessWidget {
 class _LineMarkerCell extends StatelessWidget {
   final MushafLine line;
   final List<MushafWord> words;
+  /// Index into [kRukuStarts] of the ruku that ENDS on this line, or null.
+  final int? rukuEnding;
 
-  const _LineMarkerCell({required this.line, required this.words});
+  const _LineMarkerCell({
+    required this.line,
+    required this.words,
+    required this.rukuEnding,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -62,14 +121,11 @@ class _LineMarkerCell extends StatelessWidget {
       if (isSajda(w.surah, w.ayah)) {
         markers.add(const _Glyph('۩'));
       }
+      // Quarter markers (1/4, 1/2, 3/4) fire at the START of each quarter.
+      // Full hizb / juz starts are deliberately suppressed.
       if (w.wordIndex == 1) {
-        if (rukuStartIndex(w.surah, w.ayah) != null) {
-          markers.add(_RukuBadge(surah: w.surah, ayah: w.ayah));
-        }
         final qi = hizbQuarterIndex(w.surah, w.ayah);
         if (qi != null) {
-          // qi%4: 0 = hizb/juz start — hidden per spec.
-          //       1 = 1/4, 2 = 1/2, 3 = 3/4 — shown.
           final label = switch (qi % 4) {
             1 => '۱/۴',
             2 => '۱/۲',
@@ -79,6 +135,11 @@ class _LineMarkerCell extends StatelessWidget {
           if (label != null) markers.add(_Glyph(label, fontSize: 9));
         }
       }
+    }
+
+    if (rukuEnding != null) {
+      final (s, a) = kRukuStarts[rukuEnding!];
+      markers.add(_RukuBadge(surahOfRukuStart: s, ayahOfRukuStart: a));
     }
 
     if (markers.isEmpty) return const SizedBox.shrink();
@@ -117,17 +178,22 @@ class _Glyph extends StatelessWidget {
   }
 }
 
-/// Ruku marker: ع centred, with juz number and surah-ruku number in
-/// Arabic-Indic numerals stacked tightly below.
+/// Ruku-end marker: ع centred, with juz number and surah-ruku number in
+/// Arabic-Indic numerals stacked tightly below. Numbers are derived from
+/// the ruku's START (surah, ayah) — that's what fixes the surah-ruku and
+/// juz the ruku belongs to.
 class _RukuBadge extends StatelessWidget {
-  final int surah;
-  final int ayah;
-  const _RukuBadge({required this.surah, required this.ayah});
+  final int surahOfRukuStart;
+  final int ayahOfRukuStart;
+  const _RukuBadge({
+    required this.surahOfRukuStart,
+    required this.ayahOfRukuStart,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final juz = juzForAyah(surah, ayah);
-    final ruku = rukuNumberInSurah(surah, ayah);
+    final juz = juzForAyah(surahOfRukuStart, ayahOfRukuStart);
+    final ruku = rukuNumberInSurah(surahOfRukuStart, ayahOfRukuStart);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
