@@ -150,6 +150,22 @@ class MushafDb {
     ];
   }
 
+  /// First ayah position on [pageNumber] — the (surah, ayah) of the first
+  /// word on the topmost word-bearing line. Returns null for pages that hold
+  /// only ornamental rows (impossible in practice for the bundled layouts).
+  Future<({int surah, int ayah})?> firstAyahOfPage(int pageNumber) async {
+    final lines = await getPage(pageNumber);
+    for (final l in lines) {
+      if (l.firstWordId != null && l.lastWordId != null) {
+        final words = await getWords(l.firstWordId!, l.lastWordId!);
+        if (words.isNotEmpty) {
+          return (surah: words.first.surah, ayah: words.first.ayah);
+        }
+      }
+    }
+    return null;
+  }
+
   /// Resolve a (surah, ayah) pair to its global ayah index (1..6236), used by
   /// alquran.cloud's audio CDN URL pattern.
   Future<int?> globalAyahIndex(int surah, int ayah) async {

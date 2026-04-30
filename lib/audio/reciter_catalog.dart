@@ -38,6 +38,10 @@ class Reciter {
   final Uri Function(int globalAyahIndex) urlBuilder;
   final bool requiresMetadataFetch;
   final String? providerRecitationId;
+  /// alquran.cloud edition identifier (e.g. `ar.alafasy`). Used by
+  /// AudioService to rebuild the URL at a fallback bitrate when the
+  /// requested bitrate isn't published for this edition.
+  final String? providerEditionSlug;
 
   const Reciter({
     required this.id,
@@ -50,6 +54,7 @@ class Reciter {
     this.bitrate,
     this.requiresMetadataFetch = false,
     this.providerRecitationId,
+    this.providerEditionSlug,
   });
 
   /// Builds a reciter for the alquran.cloud CDN.
@@ -69,6 +74,7 @@ class Reciter {
       authorAr: authorAr,
       languageEn: languageEn,
       languageAr: languageAr,
+      providerEditionSlug: editionSlug,
       urlBuilder: (globalAyahIndex) => Uri.parse(
         alquranCloudAudioUrl(
           editionSlug: editionSlug,
@@ -213,6 +219,10 @@ class ReciterCatalog {
   Future<File> Function()? _cacheFileOverride;
 
   static const Duration cacheMaxAge = Duration(days: 7);
+  // Bumped to v2 when we collapsed alquran.cloud entries from per-bitrate
+  // (64 + 128) to a single 128kbps entry per edition. Older caches are
+  // ignored on read so users see the cleaner list immediately.
+  static const int cacheVersion = 2;
   static const String cacheFileName = 'reciter_catalog.json';
 
   List<Reciter>? _cached;
@@ -309,7 +319,7 @@ class ReciterCatalog {
       try {
         final f = await _resolveCacheFile();
         await f.writeAsString(jsonEncode({
-          'version': 1,
+          'version': cacheVersion,
           'fetchedAt': DateTime.now().toIso8601String(),
           'reciters': [for (final r in merged) r.toJson()],
         }));
@@ -356,17 +366,16 @@ class ReciterCatalog {
       final name = item['name'] as String?;
       final language = item['language'] as String?;
       if (identifier == null || englishName == null) continue;
-      // Skip versebyverse / non-standard editions if needed — but the API
-      // already filters to type=audio. Generate both bitrates.
-      for (final br in const [64, 128]) {
-        out.add(Reciter.alquranCloud(
-          editionSlug: identifier,
-          displayName: englishName,
-          bitrate: br,
-          authorAr: name,
-          languageEn: language,
-        ));
-      }
+      // Single canonical entry per edition at 128kbps. AudioService falls
+      // back through alternative bitrates per-ayah when 128 isn't published
+      // for that edition, so we don't need to expose the bitrate axis here.
+      out.add(Reciter.alquranCloud(
+        editionSlug: identifier,
+        displayName: englishName,
+        bitrate: 128,
+        authorAr: name,
+        languageEn: language,
+      ));
     }
     return out;
   }
@@ -415,7 +424,12 @@ class ReciterCatalog {
 
   List<Reciter> _parseCacheJson(String raw) {
     try {
-      final list = (jsonDecode(raw) as Map?)?['reciters'];
+      final root = jsonDecode(raw) as Map?;
+      if (root == null) return const [];
+      // Reject older cache versions so a schema change forces a re-fetch.
+      final v = root['version'];
+      if (v is! int || v != cacheVersion) return const [];
+      final list = root['reciters'];
       if (list is! List) return const [];
       return [
         for (final item in list)

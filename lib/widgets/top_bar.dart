@@ -22,6 +22,13 @@ class TopBar extends StatelessWidget {
   final MushafEdition currentEdition;
   final ValueChanged<MushafEdition>? onSetEdition;
 
+  /// When true, the play/pause button is rendered. Mirrors `audioOnTap`:
+  /// audio stays opt-in via settings, and the header control is hidden
+  /// until the user has enabled the feature.
+  final bool audioEnabled;
+  final bool isAudioPlaying;
+  final VoidCallback? onToggleAudio;
+
   const TopBar({
     super.key,
     required this.currentEdition,
@@ -34,6 +41,9 @@ class TopBar extends StatelessWidget {
     this.onOpenJumpTo,
     this.isBookmarked = false,
     this.onSetEdition,
+    this.audioEnabled = false,
+    this.isAudioPlaying = false,
+    this.onToggleAudio,
   });
 
   @override
@@ -69,6 +79,19 @@ class TopBar extends StatelessWidget {
               onChanged: onSetEdition,
               foreground: iconColor,
             ),
+            if (audioEnabled)
+              IconButton(
+                icon: Icon(
+                  isAudioPlaying
+                      ? Icons.pause_circle_filled
+                      : Icons.play_circle_fill,
+                ),
+                color: iconColor,
+                iconSize: 26,
+                visualDensity: VisualDensity.compact,
+                tooltip: isAudioPlaying ? 'Pause recitation' : 'Play page',
+                onPressed: onToggleAudio,
+              ),
             const Spacer(),
             if (pageNumber != null && totalPages != null)
               Padding(

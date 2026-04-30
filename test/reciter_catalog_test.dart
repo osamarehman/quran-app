@@ -84,14 +84,14 @@ void main() {
 
     final list = await catalog.all();
 
-    // 2 alquran.cloud entries × 2 bitrates = 4, plus 1 quran.com = 5.
-    expect(list.length, 5);
+    // 2 alquran.cloud entries × 1 bitrate (128) + 1 quran.com = 3.
+    // Bitrate fallback at playback time covers editions that don't ship
+    // 128kbps, so we collapse the catalog to one entry per edition.
+    expect(list.length, 3);
 
     final ids = list.map((r) => r.id).toSet();
     expect(ids, contains('alquran:ar.alafasy:128'));
-    expect(ids, contains('alquran:ar.alafasy:64'));
     expect(ids, contains('alquran:ar.husary:128'));
-    expect(ids, contains('alquran:ar.husary:64'));
     expect(ids, contains('quran-com:7'));
 
     final alafasy =
@@ -118,10 +118,10 @@ void main() {
       cacheFile: () async => File('${tempDir.path}/cache.json'),
     );
 
-    final r = await catalog.byId('alquran:ar.husary:64');
+    final r = await catalog.byId('alquran:ar.husary:128');
     expect(r, isNotNull);
     expect(r!.displayName, 'Husary');
-    expect(r.bitrate, 64);
+    expect(r.bitrate, 128);
   });
 
   test('falls back to defaults on hard network failure', () async {

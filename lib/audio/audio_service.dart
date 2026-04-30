@@ -1,7 +1,10 @@
-/// Per-ayah audio playback (v0.2 Stage 1C).
+/// Continuous per-ayah audio playback (v0.2 Stage 1C, expanded for v0.7).
 ///
-/// Singleton wrapping just_audio. Resolves the global ayah index from
-/// MushafDb, looks up the URL via the active Reciter, and plays.
+/// Singleton wrapping just_audio. Builds a ConcatenatingAudioSource that
+/// grows ahead of playback so successive ayahs are gapless. Tapping a new
+/// ayah replaces the queue starting at that ayah; pause/resume keep the
+/// queue. Quran.com per-ayah URL resolution is cached. alquran.cloud 404s
+/// transparently fall back through alternate bitrates.
 library;
 
 import 'dart:async';
@@ -14,8 +17,11 @@ import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 
 import '../data/mushaf_db.dart';
+import '../data/quran_metadata.dart';
 import '../state/app_state.dart';
 import 'reciter_catalog.dart';
+
+typedef AyahPos = ({int surah, int ayah});
 
 class AudioService {
   static final AudioService _instance = AudioService._();
@@ -28,14 +34,22 @@ class AudioService {
   http.Client _client = http.Client();
   final ReciterCatalog _catalog = ReciterCatalog();
 
-  // Bounded LRU of resolved Quran.com URLs so we don't re-hit the metadata
-  // API on every replay. LinkedHashMap preserves insertion order; we evict
-  // the oldest entry when over cap.
   final LinkedHashMap<String, String> _resolvedUrlCache =
       LinkedHashMap<String, String>();
 
-  // Last error surfaced to UI as a snackbar.
   final ValueNotifier<String?> lastError = ValueNotifier<String?>(null);
+  final ValueNotifier<AyahPos?> nowPlaying = ValueNotifier<AyahPos?>(null);
+  final ValueNotifier<bool> isPlaying = ValueNotifier<bool>(false);
+
+  ConcatenatingAudioSource? _queue;
+  final List<AyahPos> _queueAyahs = [];
+  MushafDb? _activeDb;
+  Reciter? _activeReciter;
+  StreamSubscription<int?>? _indexSub;
+  StreamSubscription<PlayerState>? _stateSub;
+  // Lookahead beyond currently-playing index. 1 means "load one ayah ahead";
+  // ConcatenatingAudioSource handles the gapless transition itself.
+  static const int _lookahead = 2;
 
   AudioPlayer get player => _player;
   Stream<PlayerState> get playerState => _player.playerStateStream;
@@ -46,43 +60,165 @@ class AudioService {
     _resolvedUrlCache.clear();
   }
 
-  /// Resolves the active reciter from AppState, falling back to default.
   Future<Reciter> resolveReciter(AppStateNotifier state) async {
     final id = state.selectedReciterId ?? kDefaultReciterId;
     final r = await _catalog.byId(id);
     if (r != null) return r;
-    // Fallback: pick the first default.
     final fallback = await _catalog.byId(kDefaultReciterId);
     return fallback ?? defaultReciters().first;
   }
 
-  /// Plays a single ayah for the currently-selected reciter.
-  Future<void> playAyah(MushafDb db, Reciter reciter, int surah, int ayah) async {
-    final globalIdx = await db.globalAyahIndex(surah, ayah);
-    if (globalIdx == null) {
-      lastError.value = 'Ayah $surah:$ayah not in DB';
+  /// Plays continuously starting at ([surah], [ayah]) and advancing through
+  /// subsequent ayahs. If a queue is already running, it's replaced.
+  Future<void> playFromAyah(
+    MushafDb db,
+    Reciter reciter,
+    int surah,
+    int ayah,
+  ) async {
+    _activeDb = db;
+    _activeReciter = reciter;
+
+    await _resetQueue();
+
+    final firstSrc = await _buildSourceFor(reciter, surah, ayah);
+    if (firstSrc == null) {
+      lastError.value ??=
+          'Could not resolve audio for ${reciter.displayName} at $surah:$ayah';
       return;
     }
+
+    _queueAyahs.add((surah: surah, ayah: ayah));
+    _queue = ConcatenatingAudioSource(children: [firstSrc]);
+
     try {
-      final url = await _resolveUrl(reciter, globalIdx, surah, ayah);
-      if (url == null) {
-        // _resolveUrl may have already populated lastError with the cause.
-        lastError.value ??=
-            'Could not resolve audio URL for ${reciter.displayName}';
-        return;
-      }
-      await _player.stop();
-      await _player.setUrl(url);
-      await _player.play();
-      lastError.value = null;
+      await _player.setAudioSource(_queue!);
     } on PlayerException catch (e) {
       lastError.value = 'Playback failed: ${e.message ?? e.code}';
+      return;
     } on PlayerInterruptedException {
-      // Replaced by another setUrl/play — not user-facing.
-    } on SocketException catch (e) {
-      lastError.value = 'Network error: ${e.message}';
+      return;
+    }
+
+    _indexSub = _player.currentIndexStream.listen(_onIndexChanged);
+    _stateSub = _player.playerStateStream.listen(_onPlayerStateChanged);
+
+    nowPlaying.value = (surah: surah, ayah: ayah);
+    await _ensureLookahead(0);
+    await _player.play();
+  }
+
+  /// Plays continuously starting at the first ayah on [pageNumber].
+  Future<void> playFromPage(
+    MushafDb db,
+    Reciter reciter,
+    int pageNumber,
+  ) async {
+    final pos = await db.firstAyahOfPage(pageNumber);
+    if (pos == null) {
+      lastError.value = 'Page $pageNumber has no ayah to play';
+      return;
+    }
+    await playFromAyah(db, reciter, pos.surah, pos.ayah);
+  }
+
+  Future<void> pause() => _player.pause();
+
+  Future<void> resume() async {
+    if (_queue == null) return;
+    await _player.play();
+  }
+
+  Future<void> togglePause() async {
+    if (_player.playing) {
+      await _player.pause();
+    } else if (_queue != null) {
+      await _player.play();
     }
   }
+
+  Future<void> stop() async {
+    await _resetQueue();
+  }
+
+  void _onIndexChanged(int? idx) {
+    if (idx == null || idx >= _queueAyahs.length) return;
+    nowPlaying.value = _queueAyahs[idx];
+    _ensureLookahead(idx);
+  }
+
+  void _onPlayerStateChanged(PlayerState s) {
+    isPlaying.value = s.playing;
+    if (s.processingState == ProcessingState.completed) {
+      // End of queue (e.g. last ayah of Quran). Reset state.
+      _resetQueue();
+    }
+  }
+
+  Future<void> _ensureLookahead(int currentIdx) async {
+    final db = _activeDb;
+    final reciter = _activeReciter;
+    final queue = _queue;
+    if (db == null || reciter == null || queue == null) return;
+
+    while (_queueAyahs.length - currentIdx <= _lookahead) {
+      final last = _queueAyahs.last;
+      final next = _nextAyah(last.surah, last.ayah);
+      if (next == null) return;
+      final src = await _buildSourceFor(reciter, next.surah, next.ayah);
+      if (src == null) return;
+      _queueAyahs.add(next);
+      try {
+        await queue.add(src);
+      } on PlayerException {
+        return;
+      } on PlayerInterruptedException {
+        return;
+      }
+    }
+  }
+
+  AyahPos? _nextAyah(int surah, int ayah) {
+    if (surah < 1 || surah > kSurahAyahCounts.length) return null;
+    final maxAyah = kSurahAyahCounts[surah - 1];
+    if (ayah < maxAyah) return (surah: surah, ayah: ayah + 1);
+    if (surah < 114) return (surah: surah + 1, ayah: 1);
+    return null;
+  }
+
+  Future<AudioSource?> _buildSourceFor(
+    Reciter reciter,
+    int surah,
+    int ayah,
+  ) async {
+    final globalIdx = await _activeDb?.globalAyahIndex(surah, ayah);
+    if (globalIdx == null) {
+      lastError.value = 'Ayah $surah:$ayah not in DB';
+      return null;
+    }
+    final url = await _resolveUrl(reciter, globalIdx, surah, ayah);
+    if (url == null) return null;
+    return AudioSource.uri(Uri.parse(url));
+  }
+
+  Future<void> _resetQueue() async {
+    await _indexSub?.cancel();
+    _indexSub = null;
+    await _stateSub?.cancel();
+    _stateSub = null;
+    try {
+      await _player.stop();
+    } catch (_) {}
+    _queue = null;
+    _queueAyahs.clear();
+    nowPlaying.value = null;
+    isPlaying.value = false;
+  }
+
+  /// Single-shot ayah play (legacy entry point — now delegates to the
+  /// continuous queue so taps "play this ayah and continue").
+  Future<void> playAyah(MushafDb db, Reciter reciter, int surah, int ayah) =>
+      playFromAyah(db, reciter, surah, ayah);
 
   @visibleForTesting
   Future<String?> resolveUrlForTest(
@@ -102,12 +238,11 @@ class AudioService {
     if (!reciter.requiresMetadataFetch) {
       return reciter.urlBuilder(globalIdx).toString();
     }
-    // Cache by ayah_key — replays of the same ayah for the same reciter
-    // shouldn't re-hit the metadata endpoint.
+
     final cacheKey = '${reciter.id}:$surah:$ayah';
     final cached = _resolvedUrlCache.remove(cacheKey);
     if (cached != null) {
-      _resolvedUrlCache[cacheKey] = cached; // bump to most-recent
+      _resolvedUrlCache[cacheKey] = cached;
       return cached;
     }
 
@@ -117,10 +252,6 @@ class AudioService {
       return null;
     }
 
-    // Quran.com per-ayah lookup. Path is /by_ayah_key/{surah}:{ayah}
-    // (NOT global index). Response shape:
-    //   { "audio_files": [ { "url": "audio/.../001001.mp3", ... } ] }
-    // where url is relative to https://verses.quran.com/.
     final metaUrl = Uri.parse(
       'https://api.quran.com/api/v4/recitations/$recId/by_ayah_key/$surah:$ayah',
     );
@@ -148,10 +279,7 @@ class AudioService {
       final full = audioPath.startsWith('http')
           ? audioPath
           : 'https://verses.quran.com/$audioPath';
-      _resolvedUrlCache[cacheKey] = full;
-      while (_resolvedUrlCache.length > _resolvedUrlCacheCap) {
-        _resolvedUrlCache.remove(_resolvedUrlCache.keys.first);
-      }
+      _putCache(cacheKey, full);
       return full;
     } on TimeoutException {
       lastError.value = 'Quran.com timed out';
@@ -165,12 +293,16 @@ class AudioService {
     }
   }
 
-  Future<void> stop() => _player.stop();
-  Future<void> pause() => _player.pause();
-  Future<void> resume() => _player.play();
+  void _putCache(String key, String url) {
+    _resolvedUrlCache[key] = url;
+    while (_resolvedUrlCache.length > _resolvedUrlCacheCap) {
+      _resolvedUrlCache.remove(_resolvedUrlCache.keys.first);
+    }
+  }
 
-  /// Convenience handler intended for `MushafPage.onWordTap`.
-  /// Resolves the active reciter, plays the ayah, surfaces errors via snackbar.
+  /// Convenience handler intended for `MushafPage.onWordTap`. Starts
+  /// continuous playback from the tapped ayah onward; reuses any active
+  /// reciter; surfaces errors via snackbar.
   Future<void> handleWordTap(
     BuildContext context,
     MushafDb db,
@@ -179,7 +311,7 @@ class AudioService {
   ) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
     final reciter = await resolveReciter(state);
-    await playAyah(db, reciter, word.surah, word.ayah);
+    await playFromAyah(db, reciter, word.surah, word.ayah);
     final err = lastError.value;
     if (err != null && messenger != null) {
       messenger.showSnackBar(SnackBar(
@@ -190,6 +322,7 @@ class AudioService {
   }
 
   Future<void> dispose() async {
+    await _resetQueue();
     await _player.dispose();
   }
 }

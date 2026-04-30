@@ -68,6 +68,7 @@ class _MushafHomeState extends State<MushafHome> {
   late final AppStateNotifier _state = widget.state;
   late final PageController _pageController =
       PageController(initialPage: widget.state.currentPage - 1);
+  final AudioService _audio = AudioService();
 
   Future<MushafDb>? _dbFuture;
   MushafEdition? _openedEdition;
@@ -79,20 +80,54 @@ class _MushafHomeState extends State<MushafHome> {
     _dbFuture = MushafDb.open(edition: _state.edition);
     _openedEdition = _state.edition;
     _state.addListener(_onStateChanged);
+    _audio.isPlaying.addListener(_onAudioChanged);
+    _audio.lastError.addListener(_onAudioError);
   }
 
   @override
   void dispose() {
     _state.removeListener(_onStateChanged);
+    _audio.isPlaying.removeListener(_onAudioChanged);
+    _audio.lastError.removeListener(_onAudioError);
     _state.dispose();
     _pageController.dispose();
     super.dispose();
+  }
+
+  void _onAudioChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onAudioError() {
+    final err = _audio.lastError.value;
+    if (err == null || !mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+      duration: const Duration(seconds: 2),
+      content: Text(err),
+    ));
+  }
+
+  Future<void> _togglePlayPage(MushafDb db) async {
+    if (_audio.isPlaying.value) {
+      await _audio.pause();
+      return;
+    }
+    // If a queue is paused, resume; otherwise start a fresh queue at the
+    // current page's first ayah.
+    if (_audio.nowPlaying.value != null) {
+      await _audio.resume();
+      return;
+    }
+    final reciter = await _audio.resolveReciter(_state);
+    await _audio.playFromPage(db, reciter, _pageNumber);
   }
 
   void _onStateChanged() {
     if (_state.edition.id != _openedEdition?.id) {
       // Edition changed — reopen DB against the matching layout asset.
       _openedEdition = _state.edition;
+      // Stop any active recitation; the queue references the old DB.
+      _audio.stop();
       setState(() {
         _dbFuture = MushafDb.open(edition: _state.edition);
         _pageNumber = 1;
@@ -102,6 +137,11 @@ class _MushafHomeState extends State<MushafHome> {
       });
     } else {
       // Bookmarks / audio / reciter changed — repaint top bar etc.
+      // If the user disabled audio-on-tap, stop any in-flight playback so
+      // the play/pause control disappears in a coherent state.
+      if (!_state.audioOnTap && _audio.nowPlaying.value != null) {
+        _audio.stop();
+      }
       setState(() {});
     }
   }
@@ -135,11 +175,9 @@ class _MushafHomeState extends State<MushafHome> {
 
   @override
   Widget build(BuildContext context) {
-    return AppStateScope(
-      notifier: _state,
-      child: Scaffold(
-        body: SafeArea(
-          child: FutureBuilder<MushafDb>(
+    return Scaffold(
+      body: SafeArea(
+        child: FutureBuilder<MushafDb>(
             future: _dbFuture,
             builder: (context, snap) {
               if (snap.hasError) {
@@ -166,6 +204,9 @@ class _MushafHomeState extends State<MushafHome> {
                         _state.toggleBookmark(currentPage),
                     onOpenJumpTo: () => _openJumpTo(db, totalPages),
                     isBookmarked: _state.isBookmarked(currentPage),
+                    audioEnabled: _state.audioOnTap,
+                    isAudioPlaying: _audio.isPlaying.value,
+                    onToggleAudio: () => _togglePlayPage(db),
                   ),
                   Expanded(
                     child: PageView.builder(
@@ -194,7 +235,6 @@ class _MushafHomeState extends State<MushafHome> {
             },
           ),
         ),
-      ),
-    );
+      );
   }
 }
