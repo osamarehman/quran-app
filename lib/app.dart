@@ -8,36 +8,22 @@ import 'state/app_state.dart';
 import 'widgets/mushaf_page.dart';
 import 'widgets/top_bar.dart';
 
-class MushafApp extends StatelessWidget {
+class MushafApp extends StatefulWidget {
   const MushafApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Mushaf',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
+  State<MushafApp> createState() => _MushafAppState();
+}
+
+class _MushafAppState extends State<MushafApp> {
+  late final Future<AppStateNotifier> _stateFuture =
+      AppStateNotifier.load();
+
+  ThemeData _theme() => ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B5E20)),
         scaffoldBackgroundColor: const Color(0xFFFAF7F0),
         useMaterial3: true,
-      ),
-      home: const _MushafBoot(),
-    );
-  }
-}
-
-/// Awaits [AppStateNotifier.load] so SharedPreferences-backed state is
-/// hydrated before the home screen mounts.
-class _MushafBoot extends StatefulWidget {
-  const _MushafBoot();
-
-  @override
-  State<_MushafBoot> createState() => _MushafBootState();
-}
-
-class _MushafBootState extends State<_MushafBoot> {
-  late final Future<AppStateNotifier> _stateFuture =
-      AppStateNotifier.load();
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -45,11 +31,26 @@ class _MushafBootState extends State<_MushafBoot> {
       future: _stateFuture,
       builder: (context, snap) {
         if (!snap.hasData) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+          return MaterialApp(
+            title: 'Mushaf',
+            debugShowCheckedModeBanner: false,
+            theme: _theme(),
+            home: const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
           );
         }
-        return MushafHome(state: snap.data!);
+        final state = snap.data!;
+        // builder wraps every Navigator-pushed route so AppStateScope is
+        // visible from settings/jump-to/etc., not just from MushafHome.
+        return MaterialApp(
+          title: 'Mushaf',
+          debugShowCheckedModeBanner: false,
+          theme: _theme(),
+          builder: (context, child) =>
+              AppStateScope(notifier: state, child: child!),
+          home: MushafHome(state: state),
+        );
       },
     );
   }
