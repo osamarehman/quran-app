@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:mushaf/main.dart';
+import 'package:mushaf/app.dart';
 
 void main() {
   testWidgets('App boots without throwing', (tester) async {
