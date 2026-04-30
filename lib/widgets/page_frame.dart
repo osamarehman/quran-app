@@ -8,6 +8,11 @@ class PageFrame extends StatelessWidget {
   static const Color borderColor = Color(0xFF888888);
   static const double _borderInset = 4.0;
   static const double _topBandHeight = 28.0;
+  /// Width of the marker strip on the outside edge. Mirrored here so the
+  /// header band can pad the juz/surah labels to align with the *text*
+  /// outer edge (not the page border, which sits behind the strip).
+  static const double markerStripWidth = 28.0;
+  static const double _bandHorizontalPadding = 8.0;
 
   final int pageNumber;
 
@@ -35,6 +40,15 @@ class PageFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final juzName = kJuzNamesAr[juzForAyah(firstAyahSurah, firstAyahNumber) - 1];
     final surahGlyph = String.fromCharCode(0xE001 + (surahNumber - 1));
+    // Strip sits on the outside edge of the spread: odd pages → right.
+    // The text column ends one strip-width inside that edge, so we pad the
+    // header label on the strip side to keep it aligned with the text,
+    // not with the page-frame border.
+    final stripOnRight = pageNumber.isOdd;
+    final leftInset = _bandHorizontalPadding +
+        (stripOnRight ? 0 : markerStripWidth);
+    final rightInset = _bandHorizontalPadding +
+        (stripOnRight ? markerStripWidth : 0);
 
     return Padding(
       padding: const EdgeInsets.all(_borderInset),
@@ -48,7 +62,7 @@ class PageFrame extends StatelessWidget {
             SizedBox(
               height: _topBandHeight,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: EdgeInsets.only(left: leftInset, right: rightInset),
                 child: Row(
                   children: [
                     Text(
@@ -59,7 +73,19 @@ class PageFrame extends StatelessWidget {
                         height: 1.0,
                       ),
                     ),
-                    const Spacer(),
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          '$pageNumber',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.0,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF444444),
+                          ),
+                        ),
+                      ),
+                    ),
                     Text(
                       juzName,
                       style: const TextStyle(

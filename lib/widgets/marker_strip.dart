@@ -22,53 +22,43 @@ class MarkerStrip extends StatelessWidget {
   });
 
   /// For each line index, returns the ruku index whose LAST ayah ends on
-  /// that line — or null if no ruku ends there. A ruku ends on line L when:
-  ///   1. line L's last word's (surah, ayah) differs from line L+1's first
-  ///      word's (surah, ayah) — i.e. the ayah ended on this line, and
-  ///   2. that ayah is the last ayah of some ruku.
-  /// Cross-page boundaries (last line of page) are handled best-effort:
-  /// we look at line.lastWordId and treat it as a ruku-end if (s, a) of
-  /// that word is itself a ruku-end ayah (works whenever the layout DB's
-  /// last_word_id sits at the end of the ayah).
+  /// that line. Detection runs forward: when a line's FIRST word starts at
+  /// a known ruku-start (kRukuStarts), the immediately preceding content
+  /// line is the end of the previous ruku.
+  ///
+  /// Why first-word-of-next-line and not last-word-of-this-line: ayah-end
+  /// glyphs are stored as the final wordIndex of the ayah and frequently
+  /// wrap to the start of the next line. Checking the next line's first
+  /// word avoids a class of false negatives where the ayah-end glyph and
+  /// the next ayah's words share a line.
+  ///
+  /// Last-line-of-page fallback handles ruku-ends that fall at the bottom
+  /// of a page: if its last word sits at a known ruku-end ayah, render the
+  /// badge there.
   Map<int, int> _computeRukuEnds() {
     final out = <int, int>{};
     for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      if (line.lineType != 'ayah') continue;
-      final words = wordsByLine[line.lineNumber] ?? const <MushafWord>[];
+      final words = wordsByLine[lines[i].lineNumber] ?? const <MushafWord>[];
       if (words.isEmpty) continue;
-      final last = words.last;
-      final (s, a) = (last.surah, last.ayah);
-
-      bool ayahEnded;
-      if (i == lines.length - 1) {
-        // Last line of page — we can't compare with the next line.
-        // Best-effort: if the layout puts (s, a) as a ruku-end ayah AND the
-        // last word's wordIndex is high enough to plausibly be the end,
-        // assume the ayah ended here. Tolerated false negatives at exact
-        // cross-page boundaries; false positives are unlikely because the
-        // (s, a) lookup is exact.
-        ayahEnded = true;
-      } else {
-        // Find the next line that has words.
-        MushafWord? nextFirst;
-        for (var j = i + 1; j < lines.length; j++) {
-          final nextWords = wordsByLine[lines[j].lineNumber];
-          if (nextWords != null && nextWords.isNotEmpty) {
-            nextFirst = nextWords.first;
-            break;
-          }
-        }
-        if (nextFirst == null) {
-          ayahEnded = true;
-        } else {
-          ayahEnded = (nextFirst.surah, nextFirst.ayah) != (s, a);
+      final first = words.first;
+      final newRuku = rukuStartIndex(first.surah, first.ayah);
+      if (newRuku == null || newRuku == 0) continue;
+      // Walk back to the closest line that actually carries content.
+      for (var j = i - 1; j >= 0; j--) {
+        final prev = wordsByLine[lines[j].lineNumber] ?? const <MushafWord>[];
+        if (prev.isNotEmpty) {
+          out[j] = newRuku - 1;
+          break;
         }
       }
-
-      if (!ayahEnded) continue;
-      final ri = rukuEndIndex(s, a);
-      if (ri != null) out[i] = ri;
+    }
+    final lastIdx = lines.length - 1;
+    if (lastIdx >= 0 && !out.containsKey(lastIdx)) {
+      final lw = wordsByLine[lines[lastIdx].lineNumber] ?? const <MushafWord>[];
+      if (lw.isNotEmpty) {
+        final re = rukuEndIndex(lw.last.surah, lw.last.ayah);
+        if (re != null) out[lastIdx] = re;
+      }
     }
     return out;
   }

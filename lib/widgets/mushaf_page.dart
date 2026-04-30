@@ -5,7 +5,10 @@ import 'marker_strip.dart';
 import 'mushaf_line.dart';
 import 'page_frame.dart';
 
-const double kMarkerStripWidth = 28.0;
+/// Re-exported for layout math here. The single source of truth lives on
+/// [PageFrame.markerStripWidth] so the printed-style header band can use
+/// the same value to align labels.
+const double kMarkerStripWidth = PageFrame.markerStripWidth;
 
 /// If a page's max natural line width is below this fraction of the available
 /// width, the page is treated as "low density" (Fatiha-style) and rendered
