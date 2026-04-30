@@ -26,6 +26,49 @@ void main() {
     });
   });
 
+  group('kJuzStarts boundaries', () {
+    // Locks the canonical juz-start table against off-by-one regressions.
+    // Source: Tanzil quran-data.xml. Every juz-start (s, a) must satisfy
+    // juzForAyah(s, a) == j and juzForAyah of the previous ayah must be j-1.
+    const expected = <(int s, int a, int j)>[
+      (1, 1, 1),
+      (2, 142, 2),
+      (2, 253, 3),
+      (3, 93, 4),
+      (4, 24, 5),
+      (4, 148, 6),
+      (5, 82, 7),
+      (6, 111, 8),
+      (7, 88, 9),
+      (8, 41, 10),
+      (9, 93, 11),
+      (11, 6, 12),
+      (12, 53, 13),
+      (15, 1, 14),
+      (17, 1, 15),
+      (18, 75, 16),
+      (21, 1, 17),
+      (23, 1, 18),
+      (25, 21, 19),
+      (27, 56, 20),
+      (29, 46, 21),
+      (33, 31, 22),
+      (36, 28, 23),
+      (39, 32, 24),
+      (41, 47, 25),
+      (46, 1, 26),
+      (51, 31, 27),
+      (58, 1, 28),
+      (67, 1, 29),
+      (78, 1, 30),
+    ];
+    for (final (s, a, j) in expected) {
+      test('$s:$a → juz $j', () {
+        expect(juzForAyah(s, a), j);
+      });
+    }
+  });
+
   group('metadata cardinality', () {
     test('114 surah entries', () {
       expect(kSurahNames.length, 114);

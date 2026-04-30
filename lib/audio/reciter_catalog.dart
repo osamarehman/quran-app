@@ -99,8 +99,11 @@ class Reciter {
       languageEn: languageEn,
       requiresMetadataFetch: true,
       providerRecitationId: recitationId.toString(),
+      // Built at playback time from (surah, ayah) — see AudioService._resolveUrl.
+      // urlBuilder is provided so the type stays uniform; the path itself is
+      // not the real audio endpoint.
       urlBuilder: (globalAyahIndex) => Uri.parse(
-        'https://api.quran.com/api/v4/recitations/$recitationId/by_ayah/$globalAyahIndex',
+        'https://api.quran.com/api/v4/recitations/$recitationId/by_ayah_key/$globalAyahIndex',
       ),
     );
   }

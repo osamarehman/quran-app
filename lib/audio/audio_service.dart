@@ -5,7 +5,9 @@
 library;
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -20,13 +22,17 @@ class AudioService {
   factory AudioService() => _instance;
   AudioService._();
 
+  static const int _resolvedUrlCacheCap = 256;
+
   final AudioPlayer _player = AudioPlayer();
   http.Client _client = http.Client();
   final ReciterCatalog _catalog = ReciterCatalog();
 
-  // Cache resolved Quran.com URLs so we don't re-hit the metadata API on
-  // every replay of the same ayah.
-  final Map<String, String> _resolvedUrlCache = {};
+  // Bounded LRU of resolved Quran.com URLs so we don't re-hit the metadata
+  // API on every replay. LinkedHashMap preserves insertion order; we evict
+  // the oldest entry when over cap.
+  final LinkedHashMap<String, String> _resolvedUrlCache =
+      LinkedHashMap<String, String>();
 
   // Last error surfaced to UI as a snackbar.
   final ValueNotifier<String?> lastError = ValueNotifier<String?>(null);
@@ -58,42 +64,74 @@ class AudioService {
       return;
     }
     try {
-      final url = await _resolveUrl(reciter, globalIdx);
+      final url = await _resolveUrl(reciter, globalIdx, surah, ayah);
       if (url == null) {
-        lastError.value = 'Could not resolve audio URL for ${reciter.displayName}';
+        // _resolveUrl may have already populated lastError with the cause.
+        lastError.value ??=
+            'Could not resolve audio URL for ${reciter.displayName}';
         return;
       }
       await _player.stop();
       await _player.setUrl(url);
       await _player.play();
       lastError.value = null;
-    } catch (e) {
-      lastError.value = 'Audio error: $e';
+    } on PlayerException catch (e) {
+      lastError.value = 'Playback failed: ${e.message ?? e.code}';
+    } on PlayerInterruptedException {
+      // Replaced by another setUrl/play — not user-facing.
+    } on SocketException catch (e) {
+      lastError.value = 'Network error: ${e.message}';
     }
   }
 
-  Future<String?> _resolveUrl(Reciter reciter, int globalIdx) async {
+  @visibleForTesting
+  Future<String?> resolveUrlForTest(
+    Reciter reciter,
+    int globalIdx,
+    int surah,
+    int ayah,
+  ) =>
+      _resolveUrl(reciter, globalIdx, surah, ayah);
+
+  Future<String?> _resolveUrl(
+    Reciter reciter,
+    int globalIdx,
+    int surah,
+    int ayah,
+  ) async {
     if (!reciter.requiresMetadataFetch) {
       return reciter.urlBuilder(globalIdx).toString();
     }
-    final cacheKey = '${reciter.id}:$globalIdx';
-    final cached = _resolvedUrlCache[cacheKey];
-    if (cached != null) return cached;
+    // Cache by ayah_key — replays of the same ayah for the same reciter
+    // shouldn't re-hit the metadata endpoint.
+    final cacheKey = '${reciter.id}:$surah:$ayah';
+    final cached = _resolvedUrlCache.remove(cacheKey);
+    if (cached != null) {
+      _resolvedUrlCache[cacheKey] = cached; // bump to most-recent
+      return cached;
+    }
 
-    // Quran.com per-ayah lookup. The endpoint
-    // /api/v4/recitations/{id}/by_ayah_key/{key} returns
-    // { "audio_files": [ { "url": "audio/.../001001.mp3", ... } ] }
-    // where url is relative to https://verses.quran.com/.
     final recId = reciter.providerRecitationId;
-    if (recId == null) return null;
-    // Convert globalIdx → ayah_key (e.g. "1:1"). This requires DB lookup,
-    // but we already accepted globalIdx as input. Use the metadata URL
-    // pattern emitted by Reciter.quranCom which embeds globalIdx.
-    final metaUrl = reciter.urlBuilder(globalIdx);
+    if (recId == null) {
+      lastError.value = 'Reciter ${reciter.displayName} missing provider id';
+      return null;
+    }
+
+    // Quran.com per-ayah lookup. Path is /by_ayah_key/{surah}:{ayah}
+    // (NOT global index). Response shape:
+    //   { "audio_files": [ { "url": "audio/.../001001.mp3", ... } ] }
+    // where url is relative to https://verses.quran.com/.
+    final metaUrl = Uri.parse(
+      'https://api.quran.com/api/v4/recitations/$recId/by_ayah_key/$surah:$ayah',
+    );
     try {
-      final res =
-          await _client.get(metaUrl).timeout(const Duration(seconds: 10));
-      if (res.statusCode != 200) return null;
+      final res = await _client
+          .get(metaUrl)
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) {
+        lastError.value = 'Quran.com returned ${res.statusCode} for $surah:$ayah';
+        return null;
+      }
       final body = jsonDecode(res.body) as Map<String, dynamic>;
       final audioFiles = body['audio_files'];
       String? audioPath;
@@ -103,13 +141,26 @@ class AudioService {
       } else if (body['audio_file'] is Map) {
         audioPath = (body['audio_file'] as Map)['url'] as String?;
       }
-      if (audioPath == null) return null;
+      if (audioPath == null) {
+        lastError.value = 'Quran.com response had no audio url';
+        return null;
+      }
       final full = audioPath.startsWith('http')
           ? audioPath
           : 'https://verses.quran.com/$audioPath';
       _resolvedUrlCache[cacheKey] = full;
+      while (_resolvedUrlCache.length > _resolvedUrlCacheCap) {
+        _resolvedUrlCache.remove(_resolvedUrlCache.keys.first);
+      }
       return full;
-    } catch (_) {
+    } on TimeoutException {
+      lastError.value = 'Quran.com timed out';
+      return null;
+    } on SocketException catch (e) {
+      lastError.value = 'Network error: ${e.message}';
+      return null;
+    } on FormatException catch (e) {
+      lastError.value = 'Quran.com returned invalid JSON: ${e.message}';
       return null;
     }
   }

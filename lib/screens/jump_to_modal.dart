@@ -204,7 +204,7 @@ Future<int?> _pageForSurah(MushafDb db, int surah) async {
       final n = _coerceInt(p);
       if (n != null) return n;
     }
-  } catch (_) {/* fall through */}
+  } on Exception {/* fall through to first-word lookup */}
 
   // Fallback: page containing the first word of that surah.
   try {
@@ -222,25 +222,39 @@ Future<int?> _pageForSurah(MushafDb db, int surah) async {
     );
     if (pageRows.isEmpty) return null;
     return _coerceInt(pageRows.first['p']);
-  } catch (_) {
+  } on Exception {
     return null;
   }
 }
 
 Future<int?> _pageForJuz(MushafDb db, int juz) async {
-  if (juz == 1) {
-    return _pageForSurah(db, 1);
+  if (juz < 1 || juz > kJuzStarts.length) return null;
+  final (surah, ayah) = kJuzStarts[juz - 1];
+  return _pageForAyah(db, surah, ayah);
+}
+
+/// Resolves (surah, ayah) → page by finding the word id of that ayah's first
+/// word, then locating the layout page whose [first_word_id, last_word_id]
+/// range contains it.
+Future<int?> _pageForAyah(MushafDb db, int surah, int ayah) async {
+  try {
+    final wordRows = await db.wordsDb.rawQuery(
+      'SELECT MIN(id) AS id FROM words WHERE surah = ? AND ayah = ?',
+      [surah, ayah],
+    );
+    if (wordRows.isEmpty) return null;
+    final firstId = _coerceInt(wordRows.first['id']);
+    if (firstId == null) return null;
+    final pageRows = await db.layoutDb.rawQuery(
+      'SELECT MIN(page_number) AS p FROM pages '
+      'WHERE first_word_id <= ? AND last_word_id >= ?',
+      [firstId, firstId],
+    );
+    if (pageRows.isEmpty) return null;
+    return _coerceInt(pageRows.first['p']);
+  } on Exception {
+    return null;
   }
-  // Without an exposed juz-starts table we lean on Agent A's juzForAyah:
-  // find the first surah whose first ayah falls in this juz, then resolve
-  // via the surah lookup. Once kJuzNamesAr / _kJuzStarts is populated this
-  // gives the correct first page for every juz; until then it falls through.
-  for (var s = 1; s <= 114; s++) {
-    if (juzForAyah(s, 1) == juz) {
-      return _pageForSurah(db, s);
-    }
-  }
-  return null;
 }
 
 int? _coerceInt(Object? v) {

@@ -168,7 +168,7 @@ const List<String> kJuzNamesAr = <String>[
 ];
 
 /// 30 (surah, ayah) pairs marking the start of each juz, in order 1..30.
-const List<(int, int)> _kJuzStarts = <(int, int)>[
+const List<(int, int)> kJuzStarts = <(int, int)>[
   (1, 1),     // 1  - Al-Fatiha 1
   (2, 142),   // 2  - Al-Baqarah 142
   (2, 253),   // 3  - Al-Baqarah 253
@@ -331,8 +331,8 @@ const List<(int, int)> kRukuStarts = <(int, int)>[
 
 int juzForAyah(int surah, int ayah) {
   var j = 1;
-  for (var i = 0; i < _kJuzStarts.length; i++) {
-    final (s, a) = _kJuzStarts[i];
+  for (var i = 0; i < kJuzStarts.length; i++) {
+    final (s, a) = kJuzStarts[i];
     if (surah > s || (surah == s && ayah >= a)) {
       j = i + 1;
     } else {
