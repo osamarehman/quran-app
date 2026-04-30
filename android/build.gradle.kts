@@ -17,6 +17,19 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+    // Force every Android subproject to use the NDK we have installed.
+    // Some Flutter plugins (e.g. sqlite3) hard-code a newer NDK version
+    // and trigger an auto-download that can fail behind corp proxies.
+    plugins.withId("com.android.library") {
+        extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
+            ndkVersion = "27.1.12297006"
+        }
+    }
+    plugins.withId("com.android.application") {
+        extensions.configure<com.android.build.gradle.AppExtension>("android") {
+            ndkVersion = "27.1.12297006"
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

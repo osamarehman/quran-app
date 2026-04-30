@@ -9,4 +9,4 @@ if [[ ! -f "$apk" ]]; then
   exit 1
 fi
 
-exec ./scripts/flutter.sh install
+exec ./scripts/flutter.sh install --debug "$@"
