@@ -159,7 +159,7 @@ class _PageBody extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final lineColumnAvailableWidth =
-            constraints.maxWidth - 2 * kMarkerStripWidth;
+            constraints.maxWidth - kMarkerStripWidth;
         final maxNatural = pageMaxNaturalLineWidth(data.wordsByLine);
         final narrow =
             lineColumnAvailableWidth > 0 &&
@@ -175,19 +175,23 @@ class _PageBody extends StatelessWidget {
               )
             : _GriddedLineCells(data: data, onWordTap: onWordTap);
 
-        final leftStrip = _StripCell(
+        // Printed mushaf convention: strips on the OUTSIDE edge of the
+        // facing-page spread. Odd pages (right page in spread) → strip on
+        // right; even pages → strip on left. Vertical divider sits between
+        // strip and text; opposite edge is just the page-frame border.
+        final stripOnRight = pageNumber.isOdd;
+        final strip = _StripCell(
           data: data,
           pageNumber: pageNumber,
-          divider: const Border(right: kCellDivider),
-        );
-        final rightStrip = _StripCell(
-          data: data,
-          pageNumber: pageNumber,
-          divider: const Border(left: kCellDivider),
+          divider: stripOnRight
+              ? const Border(left: kCellDivider)
+              : const Border(right: kCellDivider),
         );
 
         return Row(
-          children: [leftStrip, Expanded(child: cellColumn), rightStrip],
+          children: stripOnRight
+              ? [Expanded(child: cellColumn), strip]
+              : [strip, Expanded(child: cellColumn)],
         );
       },
     );
