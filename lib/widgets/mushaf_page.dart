@@ -5,8 +5,6 @@ import 'marker_strip.dart';
 import 'mushaf_line.dart';
 import 'page_frame.dart';
 
-/// Width of the page-edge marker strip. Kept here so MushafPage can reserve
-/// the same width whether or not Agent D has filled in MarkerStrip yet.
 const double kMarkerStripWidth = 28.0;
 
 /// If a page's max natural line width is below this fraction of the available
@@ -23,11 +21,20 @@ class _PageData {
   _PageData(this.lines, this.wordsByLine);
 }
 
-/// Returns (primarySurah, firstAyahSurah, firstAyahNumber) for the page.
-/// Primary surah prefers surah_name lines, else falls back to the smallest
-/// surah_number on the page (or first word's surah). First ayah is taken
-/// from the first ayah-typed line's first word.
+/// Returns (primarySurah, firstAyahSurah, firstAyahNumber). Primary surah
+/// prefers a surah_name line, else the smallest surah_number on the page,
+/// else the first word's surah. First-ayah comes from the first word in
+/// line order.
 (int, int, int) _resolvePagePrimary(_PageData data) {
+  MushafWord? firstWord;
+  for (final l in data.lines) {
+    final words = data.wordsByLine[l.lineNumber];
+    if (words != null && words.isNotEmpty) {
+      firstWord = words.first;
+      break;
+    }
+  }
+
   int? primary;
   for (final l in data.lines) {
     if (l.lineType == 'surah_name' && l.surahNumber != null) {
@@ -35,26 +42,14 @@ class _PageData {
       break;
     }
   }
-  // First word on the page (in line order) gives first-ayah surah/number.
-  int? firstSurah;
-  int? firstAyah;
-  for (final l in data.lines) {
-    final words = data.wordsByLine[l.lineNumber];
-    if (words != null && words.isNotEmpty) {
-      firstSurah = words.first.surah;
-      firstAyah = words.first.ayah;
-      break;
-    }
-  }
   if (primary == null) {
-    int? minSurah;
     for (final l in data.lines) {
       final s = l.surahNumber;
-      if (s != null && (minSurah == null || s < minSurah)) minSurah = s;
+      if (s != null && (primary == null || s < primary)) primary = s;
     }
-    primary = minSurah ?? firstSurah ?? 1;
   }
-  return (primary, firstSurah ?? primary, firstAyah ?? 1);
+  primary ??= firstWord?.surah ?? 1;
+  return (primary, firstWord?.surah ?? primary, firstWord?.ayah ?? 1);
 }
 
 class MushafPage extends StatefulWidget {
@@ -155,7 +150,6 @@ class _PageBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Reserve strip width on the outside edge of the page.
         // Odd page (right side of an RTL spread) → strip on right.
         final stripOnRight = pageNumber.isOdd;
         final strip = MarkerStrip(
@@ -164,8 +158,9 @@ class _PageBody extends StatelessWidget {
           pageNumber: pageNumber,
           width: kMarkerStripWidth,
         );
+        // 16px horizontal padding on each side of the line column.
         final lineColumnAvailableWidth =
-            constraints.maxWidth - kMarkerStripWidth - 32; // 16 px padding x 2
+            constraints.maxWidth - kMarkerStripWidth - 32;
 
         final maxNatural = pageMaxNaturalLineWidth(data.wordsByLine);
         final narrow =

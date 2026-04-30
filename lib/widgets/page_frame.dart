@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../data/quran_metadata.dart';
 
-/// Printed-mushaf style frame around a single page. Draws a thin charcoal
-/// rectangle inset 4px from the edges, with a 28px top band that contains
-/// the surah glyph (left, SurahName font) and the juz Arabic incipit (right,
-/// IndopakNastaleeq font). The page content lives below a 1px divider.
+/// Printed-mushaf style frame around a single page: thin border with a top
+/// band showing the surah glyph (left) and juz incipit (right).
 class PageFrame extends StatelessWidget {
   static const Color _borderColor = Color(0xFF888888);
   static const double _borderInset = 4.0;
@@ -35,10 +33,7 @@ class PageFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final juzIndex = juzForAyah(firstAyahSurah, firstAyahNumber) - 1;
-    final juzName = (juzIndex >= 0 && juzIndex < kJuzNamesAr.length)
-        ? kJuzNamesAr[juzIndex]
-        : '';
+    final juzName = kJuzNamesAr[juzForAyah(firstAyahSurah, firstAyahNumber) - 1];
     final surahGlyph = String.fromCharCode(0xE001 + (surahNumber - 1));
 
     return Padding(

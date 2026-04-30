@@ -1,13 +1,5 @@
-/// Hardcoded const Quran metadata. Stubs in this file are populated by
-/// the v0.2 Stage 1 implementer agents (see plan):
-///
-/// - Agent A populates [kSurahNames], [kJuzNamesAr], [_kJuzStarts],
-///   and the [juzForAyah] / [juzNumberForPagePrimaryAyah] helpers.
-/// - Agent D populates [kSajdaAyat], [kHizbStarts], [kRukuStarts] and
-///   the [isSajda] / [hizbStartIndex] / [rukuStartIndex] helpers.
-///
-/// Until then, [juzForAyah] returns 1, the lookups return null/false,
-/// and the lists are empty so the rest of the app compiles cleanly.
+/// Hardcoded const Quran metadata: surah names, juz incipits and starts,
+/// sajda positions, hizb starts, ruku starts.
 library;
 
 class SurahMeta {
@@ -338,9 +330,7 @@ const List<(int, int)> kRukuStarts = <(int, int)>[
 ];
 
 int juzForAyah(int surah, int ayah) {
-  if (_kJuzStarts.isEmpty) return 1;
-  // Linear scan is fine for 30 entries; agent may swap to binary search.
-  int j = 1;
+  var j = 1;
   for (var i = 0; i < _kJuzStarts.length; i++) {
     final (s, a) = _kJuzStarts[i];
     if (surah > s || (surah == s && ayah >= a)) {
@@ -352,19 +342,14 @@ int juzForAyah(int surah, int ayah) {
   return j;
 }
 
-bool isSajda(int surah, int ayah) =>
-    kSajdaAyat.contains((surah, ayah));
+bool isSajda(int surah, int ayah) => kSajdaAyat.contains((surah, ayah));
 
 int? hizbStartIndex(int surah, int ayah) {
-  for (var i = 0; i < kHizbStarts.length; i++) {
-    if (kHizbStarts[i] == (surah, ayah)) return i;
-  }
-  return null;
+  final i = kHizbStarts.indexOf((surah, ayah));
+  return i == -1 ? null : i;
 }
 
 int? rukuStartIndex(int surah, int ayah) {
-  for (var i = 0; i < kRukuStarts.length; i++) {
-    if (kRukuStarts[i] == (surah, ayah)) return i;
-  }
-  return null;
+  final i = kRukuStarts.indexOf((surah, ayah));
+  return i == -1 ? null : i;
 }

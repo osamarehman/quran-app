@@ -109,17 +109,19 @@ class _EditionPicker extends StatelessWidget {
     return PopupMenuButton<MushafEdition>(
       tooltip: 'Mushaf edition',
       enabled: onChanged != null,
-      onSelected: (e) => onChanged?.call(e),
+      onSelected: onChanged,
       itemBuilder: (ctx) => [
         for (final e in MushafEdition.all)
           PopupMenuItem<MushafEdition>(
             value: e,
             child: Row(
               children: [
-                if (e.id == current.id)
-                  const Icon(Icons.check, size: 16)
-                else
-                  const SizedBox(width: 16),
+                SizedBox(
+                  width: 16,
+                  child: e.id == current.id
+                      ? const Icon(Icons.check, size: 16)
+                      : null,
+                ),
                 const SizedBox(width: 8),
                 Text(e.label),
               ],

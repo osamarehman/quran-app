@@ -5,8 +5,8 @@ import '../data/mushaf_db.dart';
 import '../state/app_state.dart';
 
 /// Page-level settings: edition picker, audio toggle, reciter list, bitrate
-/// (alquran.cloud only), and bookmarks. Tapping a bookmark closes settings
-/// and returns the target page to the caller via [Navigator.pop].
+/// (alquran.cloud only), and bookmarks. Tapping a bookmark pops with the
+/// target page.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -157,13 +157,9 @@ class _ReciterSection extends StatelessWidget {
       builder: (context, snap) {
         final reciters = snap.data ?? const <Reciter>[];
         final selectedId = state.selectedReciterId ?? kDefaultReciterId;
-        Reciter? selected;
-        for (final r in reciters) {
-          if (r.id == selectedId) {
-            selected = r;
-            break;
-          }
-        }
+        final selected = reciters
+            .where((r) => r.id == selectedId)
+            .firstOrNull;
         final status = ReciterCatalog().status;
 
         return Column(
@@ -266,11 +262,9 @@ class _BitrateRow extends StatelessWidget {
         onSelectionChanged: (s) {
           final next = s.first;
           if (next == currentBr) return;
-          // Find sibling reciter at the new bitrate.
-          final base = selected.id.split(':').sublist(0, 2).join(':');
-          final newId = '$base:$next';
-          final exists = reciters.any((r) => r.id == newId);
-          if (exists) state.setReciter(newId);
+          final parts = selected.id.split(':');
+          final newId = '${parts[0]}:${parts[1]}:$next';
+          if (reciters.any((r) => r.id == newId)) state.setReciter(newId);
         },
       ),
     );

@@ -3,11 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/mushaf_db.dart';
 
-/// Persistent app state for v0.2 Stage 1.
-///
-/// Backs the top bar, settings screen, jump-to modal, and bookmark toggle.
-/// Hydrates from SharedPreferences on construction via [load], and writes
-/// every mutation back to prefs so user choices survive across launches.
+/// Persistent app state. Hydrated from SharedPreferences via [load]; every
+/// mutation writes back so user choices survive across launches.
 class AppStateNotifier extends ChangeNotifier {
   static const _kEditionId = 'app.edition.id';
   static const _kAudioOnTap = 'app.audioOnTap';
@@ -20,8 +17,6 @@ class AppStateNotifier extends ChangeNotifier {
   bool _audioOnTap;
   String? _selectedReciterId;
 
-  /// Insertion-ordered list of bookmarked page numbers. Backed by a List so
-  /// callers can render most-recent-first or first-added-first as they like.
   final List<int> _bookmarks;
 
   AppStateNotifier({
@@ -36,30 +31,22 @@ class AppStateNotifier extends ChangeNotifier {
         _selectedReciterId = selectedReciterId,
         _bookmarks = List<int>.of(bookmarks ?? const <int>[]);
 
-  /// Hydrates an [AppStateNotifier] from [SharedPreferences]. Falls back to
-  /// defaults for any missing or malformed key.
+  /// Hydrates from [SharedPreferences]; defaults fill any missing/malformed key.
   static Future<AppStateNotifier> load({SharedPreferences? prefs}) async {
     final p = prefs ?? await SharedPreferences.getInstance();
-
     final editionId = p.getString(_kEditionId);
-    final edition = MushafEdition.all.firstWhere(
-      (e) => e.id == editionId,
-      orElse: () => MushafEdition.fifteenLine,
-    );
-
-    final bookmarksRaw = p.getStringList(_kBookmarks) ?? const <String>[];
-    final bookmarks = <int>[];
-    for (final s in bookmarksRaw) {
-      final n = int.tryParse(s);
-      if (n != null) bookmarks.add(n);
-    }
-
     return AppStateNotifier(
       prefs: p,
-      edition: edition,
+      edition: MushafEdition.all.firstWhere(
+        (e) => e.id == editionId,
+        orElse: () => MushafEdition.fifteenLine,
+      ),
       audioOnTap: p.getBool(_kAudioOnTap) ?? false,
       selectedReciterId: p.getString(_kSelectedReciterId),
-      bookmarks: bookmarks,
+      bookmarks: [
+        for (final s in p.getStringList(_kBookmarks) ?? const <String>[])
+          if (int.tryParse(s) case final n?) n,
+      ],
     );
   }
 
@@ -98,11 +85,7 @@ class AppStateNotifier extends ChangeNotifier {
   bool isBookmarked(int page) => _bookmarks.contains(page);
 
   void toggleBookmark(int page) {
-    if (_bookmarks.remove(page)) {
-      // removed
-    } else {
-      _bookmarks.add(page);
-    }
+    if (!_bookmarks.remove(page)) _bookmarks.add(page);
     _saveBookmarks();
     notifyListeners();
   }
@@ -115,10 +98,9 @@ class AppStateNotifier extends ChangeNotifier {
   }
 
   void _saveBookmarks() {
-    _prefs?.setStringList(
-      _kBookmarks,
-      [for (final b in _bookmarks) b.toString()],
-    );
+    _prefs?.setStringList(_kBookmarks, [
+      for (final b in _bookmarks) b.toString(),
+    ]);
   }
 }
 

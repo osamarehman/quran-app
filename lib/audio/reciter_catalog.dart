@@ -1,11 +1,6 @@
-/// Multi-CDN reciter catalog (v0.2 Stage 1C).
-///
-/// Fetches and merges the reciter directories of:
-///   * alquran.cloud  — primary, simple direct CDN URLs
-///   * Quran.com      — secondary, requires per-ayah metadata fetch
-///
-/// Merged list is cached to disk under the app docs dir as
-/// `reciter_catalog.json` and re-fetched on demand or when older than 7 days.
+/// Multi-CDN reciter catalog. Merges alquran.cloud (direct CDN URLs) and
+/// Quran.com (per-ayah metadata fetch). Cached to disk under the app docs
+/// dir as `reciter_catalog.json`, re-fetched on demand or after 7 days.
 library;
 
 import 'dart:async';
@@ -42,7 +37,6 @@ class Reciter {
   final int? bitrate;
   final Uri Function(int globalAyahIndex) urlBuilder;
   final bool requiresMetadataFetch;
-  // Provider-specific id used when [requiresMetadataFetch] is true.
   final String? providerRecitationId;
 
   const Reciter({
@@ -86,8 +80,8 @@ class Reciter {
   }
 
   /// Builds a reciter for Quran.com. Per-ayah audio requires a metadata
-  /// fetch — `urlBuilder` here returns the metadata endpoint, and
-  /// AudioService resolves the actual MP3 URL at playback time.
+  /// fetch — `urlBuilder` returns the metadata endpoint as a placeholder;
+  /// AudioService resolves the real MP3 URL at playback time.
   factory Reciter.quranCom({
     required int recitationId,
     required String displayName,
@@ -97,16 +91,15 @@ class Reciter {
   }) {
     return Reciter(
       id: 'quran-com:$recitationId',
-      displayName:
-          style != null && style.isNotEmpty ? '$displayName ($style)' : displayName,
+      displayName: (style != null && style.isNotEmpty)
+          ? '$displayName ($style)'
+          : displayName,
       provider: kProviderQuranCom,
       authorAr: authorAr,
       languageEn: languageEn,
       requiresMetadataFetch: true,
       providerRecitationId: recitationId.toString(),
       urlBuilder: (globalAyahIndex) => Uri.parse(
-        // Placeholder — AudioService.playAyah does the real metadata fetch
-        // and rewrites the URL via [Reciter.providerRecitationId].
         'https://api.quran.com/api/v4/recitations/$recitationId/by_ayah/$globalAyahIndex',
       ),
     );
@@ -124,44 +117,38 @@ class Reciter {
         'providerRecitationId': providerRecitationId,
       };
 
-  /// Reconstructs a Reciter from the cached JSON shape. Reads `provider`,
-  /// `bitrate`, etc. and re-derives the urlBuilder from id + provider —
-  /// keeping the cache provider-agnostic.
+  /// Reconstructs from cached JSON, re-deriving urlBuilder from id+provider.
   static Reciter? fromJson(Map<String, dynamic> json) {
     final provider = json['provider'] as String?;
     final id = json['id'] as String?;
     final displayName = json['displayName'] as String?;
     if (provider == null || id == null || displayName == null) return null;
 
-    if (provider == kProviderAlquranCloud) {
-      // id shape: alquran:{editionSlug}:{bitrate}
-      final parts = id.split(':');
-      if (parts.length < 3) return null;
-      final editionSlug = parts.sublist(1, parts.length - 1).join(':');
-      final bitrate =
-          int.tryParse(parts.last) ?? (json['bitrate'] as int? ?? 128);
-      return Reciter.alquranCloud(
-        editionSlug: editionSlug,
-        displayName: displayName,
-        bitrate: bitrate,
-        authorAr: json['authorAr'] as String?,
-        languageEn: json['languageEn'] as String?,
-        languageAr: json['languageAr'] as String?,
-      );
+    switch (provider) {
+      case kProviderAlquranCloud:
+        // id shape: alquran:{editionSlug}:{bitrate}
+        final parts = id.split(':');
+        if (parts.length < 3) return null;
+        return Reciter.alquranCloud(
+          editionSlug: parts.sublist(1, parts.length - 1).join(':'),
+          displayName: displayName,
+          bitrate: int.tryParse(parts.last) ?? (json['bitrate'] as int? ?? 128),
+          authorAr: json['authorAr'] as String?,
+          languageEn: json['languageEn'] as String?,
+          languageAr: json['languageAr'] as String?,
+        );
+      case kProviderQuranCom:
+        final recId = int.tryParse(json['providerRecitationId'] as String? ?? '');
+        if (recId == null) return null;
+        return Reciter.quranCom(
+          recitationId: recId,
+          displayName: displayName,
+          authorAr: json['authorAr'] as String?,
+          languageEn: json['languageEn'] as String?,
+        );
+      default:
+        return null;
     }
-
-    if (provider == kProviderQuranCom) {
-      final recId = int.tryParse(json['providerRecitationId'] as String? ?? '');
-      if (recId == null) return null;
-      return Reciter.quranCom(
-        recitationId: recId,
-        displayName: displayName,
-        authorAr: json['authorAr'] as String?,
-        languageEn: json['languageEn'] as String?,
-      );
-    }
-
-    return null;
   }
 }
 
@@ -265,10 +252,7 @@ class ReciterCatalog {
 
   Future<Reciter?> byId(String id) async {
     final list = await all();
-    for (final r in list) {
-      if (r.id == id) return r;
-    }
-    return null;
+    return list.where((r) => r.id == id).firstOrNull;
   }
 
   /// Forces a network re-fetch.
@@ -280,14 +264,11 @@ class ReciterCatalog {
   }
 
   Future<List<Reciter>> _load() async {
-    // Try disk cache first.
     try {
       final cacheFile = await _resolveCacheFile();
       if (await cacheFile.exists()) {
         final stat = await cacheFile.stat();
-        final age = DateTime.now().difference(stat.modified);
-        final raw = await cacheFile.readAsString();
-        final parsed = _parseCacheJson(raw);
+        final parsed = _parseCacheJson(await cacheFile.readAsString());
         if (parsed.isNotEmpty) {
           _cached = parsed;
           _status = CatalogStatus(
@@ -297,13 +278,8 @@ class ReciterCatalog {
             fromCache: true,
             fromFallback: false,
           );
-          // If older than max age, kick off a background refresh but still
-          // return the cached list immediately.
-          if (age > cacheMaxAge) {
-            // ignore: discarded_futures
-            unawaited(_fetchAndPersist().then((fresh) {
-              _cached = fresh;
-            }).catchError((_) {}));
+          if (DateTime.now().difference(stat.modified) > cacheMaxAge) {
+            unawaited(_fetchAndPersist().catchError((_) => parsed));
           }
           return parsed;
         }
@@ -311,21 +287,21 @@ class ReciterCatalog {
     } catch (_) {
       // fall through to network
     }
-
     return _fetchAndPersist();
   }
 
   Future<List<Reciter>> _fetchAndPersist() async {
     try {
-      final aFuture = _fetchAlquranCloud()
-          .then<List<Reciter>>((v) => v, onError: (_, __) => <Reciter>[]);
-      final qFuture = _fetchQuranCom()
-          .then<List<Reciter>>((v) => v, onError: (_, __) => <Reciter>[]);
-      final results = await Future.wait<List<Reciter>>([aFuture, qFuture]);
-      final merged = _merge([...results[0], ...results[1]]);
-      if (merged.isEmpty) {
-        throw StateError('All providers returned empty');
-      }
+      final results = await Future.wait<List<Reciter>>([
+        _fetchAlquranCloud().catchError((_) => <Reciter>[]),
+        _fetchQuranCom().catchError((_) => <Reciter>[]),
+      ]);
+      final seen = <String>{};
+      final merged = [
+        for (final r in [...results[0], ...results[1]])
+          if (seen.add(r.id)) r,
+      ];
+      if (merged.isEmpty) throw StateError('All providers returned empty');
       _cached = merged;
       try {
         final f = await _resolveCacheFile();
@@ -346,7 +322,6 @@ class ReciterCatalog {
       );
       return merged;
     } catch (e) {
-      // Hard failure — return defaults.
       final fallback = defaultReciters();
       _cached = fallback;
       _status = CatalogStatus(
@@ -435,30 +410,15 @@ class ReciterCatalog {
     return out;
   }
 
-  // Dedupe by id; preserve insertion order (alquran.cloud first).
-  List<Reciter> _merge(List<Reciter> all) {
-    final seen = <String>{};
-    final out = <Reciter>[];
-    for (final r in all) {
-      if (seen.add(r.id)) out.add(r);
-    }
-    return out;
-  }
-
   List<Reciter> _parseCacheJson(String raw) {
     try {
-      final json = jsonDecode(raw);
-      if (json is! Map) return const [];
-      final list = json['reciters'];
+      final list = (jsonDecode(raw) as Map?)?['reciters'];
       if (list is! List) return const [];
-      final out = <Reciter>[];
-      for (final item in list) {
-        if (item is Map<String, dynamic>) {
-          final r = Reciter.fromJson(item);
-          if (r != null) out.add(r);
-        }
-      }
-      return out;
+      return [
+        for (final item in list)
+          if (item is Map<String, dynamic>)
+            if (Reciter.fromJson(item) case final r?) r,
+      ];
     } catch (_) {
       return const [];
     }
