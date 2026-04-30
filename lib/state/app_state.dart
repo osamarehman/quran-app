@@ -10,12 +10,14 @@ class AppStateNotifier extends ChangeNotifier {
   static const _kAudioOnTap = 'app.audioOnTap';
   static const _kSelectedReciterId = 'app.selectedReciterId';
   static const _kBookmarks = 'app.bookmarks';
+  static const _kCurrentPage = 'app.currentPage';
 
   final SharedPreferences? _prefs;
 
   MushafEdition _edition;
   bool _audioOnTap;
   String? _selectedReciterId;
+  int _currentPage;
 
   final List<int> _bookmarks;
 
@@ -25,10 +27,12 @@ class AppStateNotifier extends ChangeNotifier {
     bool audioOnTap = false,
     String? selectedReciterId,
     List<int>? bookmarks,
+    int currentPage = 1,
   })  : _prefs = prefs,
         _edition = edition,
         _audioOnTap = audioOnTap,
         _selectedReciterId = selectedReciterId,
+        _currentPage = currentPage,
         _bookmarks = List<int>.of(bookmarks ?? const <int>[]);
 
   /// Hydrates from [SharedPreferences]; defaults fill any missing/malformed key.
@@ -47,12 +51,22 @@ class AppStateNotifier extends ChangeNotifier {
         for (final s in p.getStringList(_kBookmarks) ?? const <String>[])
           if (int.tryParse(s) case final n?) n,
       ],
+      currentPage: p.getInt(_kCurrentPage) ?? 1,
     );
   }
 
   MushafEdition get edition => _edition;
   bool get audioOnTap => _audioOnTap;
   String? get selectedReciterId => _selectedReciterId;
+  int get currentPage => _currentPage;
+
+  /// Saves the current page so the app can reopen on it. Notify-suppressed
+  /// so the PageView-driven swipe doesn't cause repaints elsewhere.
+  void setCurrentPage(int page) {
+    if (_currentPage == page) return;
+    _currentPage = page;
+    _prefs?.setInt(_kCurrentPage, page);
+  }
 
   /// Insertion-ordered, unmodifiable view of bookmarks.
   List<int> get bookmarks => List.unmodifiable(_bookmarks);

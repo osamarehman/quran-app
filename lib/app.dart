@@ -65,11 +65,12 @@ class MushafHome extends StatefulWidget {
 
 class _MushafHomeState extends State<MushafHome> {
   late final AppStateNotifier _state = widget.state;
-  late final PageController _pageController = PageController(initialPage: 0);
+  late final PageController _pageController =
+      PageController(initialPage: widget.state.currentPage - 1);
 
   Future<MushafDb>? _dbFuture;
   MushafEdition? _openedEdition;
-  int _pageNumber = 1;
+  late int _pageNumber = widget.state.currentPage;
 
   @override
   void initState() {
@@ -105,7 +106,9 @@ class _MushafHomeState extends State<MushafHome> {
   }
 
   void _onPageChanged(int index) {
-    setState(() => _pageNumber = index + 1);
+    final page = index + 1;
+    setState(() => _pageNumber = page);
+    _state.setCurrentPage(page);
   }
 
   Future<void> _openSettings(int totalPages) async {

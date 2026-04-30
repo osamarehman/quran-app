@@ -132,7 +132,7 @@ class _LineMarkerCell extends StatelessWidget {
             3 => '۳/۴',
             _ => null,
           };
-          if (label != null) markers.add(_Glyph(label, fontSize: 9));
+          if (label != null) markers.add(_Glyph(label, fontSize: 11));
         }
       }
     }
@@ -201,20 +201,31 @@ class _RukuBadge extends StatelessWidget {
           'ع',
           style: TextStyle(
             fontFamily: 'IndopakNastaleeq',
-            fontSize: 13,
+            fontSize: 18,
             height: 1.0,
-            color: Color(0xFF333333),
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF222222),
           ),
         ),
         const SizedBox(height: 1),
         Text(
           _arabicIndic('$juz'),
-          style: const TextStyle(fontSize: 8, height: 1.0, color: Color(0xFF666666)),
+          style: const TextStyle(
+            fontSize: 10,
+            height: 1.0,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF333333),
+          ),
         ),
         if (ruku != null)
           Text(
             _arabicIndic('$ruku'),
-            style: const TextStyle(fontSize: 8, height: 1.0, color: Color(0xFF666666)),
+            style: const TextStyle(
+              fontSize: 10,
+              height: 1.0,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF333333),
+            ),
           ),
       ],
     );
