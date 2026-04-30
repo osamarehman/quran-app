@@ -1,52 +1,56 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
 
-# dependencies
-node_modules/
+# IntelliJ
+*.iml
+*.ipr
+*.iws
+.idea/
 
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
+# VS Code (commented out so launch configs can be shared if desired)
+#.vscode/
 
-# Native
-.kotlin/
-*.orig.*
+# Flutter / Dart / Pub
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json
+
+# Android Studio build artifacts
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Build outputs
+*.apk
+*.aab
+
+# Secrets
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
 *.pem
-
-# local env files
 .env*.local
-
-# typescript
-*.tsbuildinfo
-
-# generated native folders
-/ios
-/android
-
-# IDE
-.idea/
 
 # Claude Code
 .claude/
-
-# Build artifacts
-/build/
-*.apk
-*.aab
