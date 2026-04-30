@@ -20,20 +20,50 @@ class MushafApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFFAF7F0),
         useMaterial3: true,
       ),
-      home: const MushafHome(),
+      home: const _MushafBoot(),
+    );
+  }
+}
+
+/// Awaits [AppStateNotifier.load] so SharedPreferences-backed state is
+/// hydrated before the home screen mounts.
+class _MushafBoot extends StatefulWidget {
+  const _MushafBoot();
+
+  @override
+  State<_MushafBoot> createState() => _MushafBootState();
+}
+
+class _MushafBootState extends State<_MushafBoot> {
+  late final Future<AppStateNotifier> _stateFuture =
+      AppStateNotifier.load();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AppStateNotifier>(
+      future: _stateFuture,
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return MushafHome(state: snap.data!);
+      },
     );
   }
 }
 
 class MushafHome extends StatefulWidget {
-  const MushafHome({super.key});
+  final AppStateNotifier state;
+  const MushafHome({super.key, required this.state});
 
   @override
   State<MushafHome> createState() => _MushafHomeState();
 }
 
 class _MushafHomeState extends State<MushafHome> {
-  final AppStateNotifier _state = AppStateNotifier();
+  late final AppStateNotifier _state = widget.state;
   late final PageController _pageController = PageController(initialPage: 0);
 
   Future<MushafDb>? _dbFuture;
@@ -67,6 +97,9 @@ class _MushafHomeState extends State<MushafHome> {
           _pageController.jumpToPage(0);
         }
       });
+    } else {
+      // Bookmarks / audio / reciter changed — repaint top bar etc.
+      setState(() {});
     }
   }
 
@@ -74,14 +107,22 @@ class _MushafHomeState extends State<MushafHome> {
     setState(() => _pageNumber = index + 1);
   }
 
-  Future<void> _openSettings() async {
-    await Navigator.of(context).push<void>(
+  Future<void> _openSettings(int totalPages) async {
+    final target = await Navigator.of(context).push<int>(
       MaterialPageRoute(builder: (_) => const SettingsScreen()),
     );
+    if (target != null) {
+      final clamped = target.clamp(1, totalPages);
+      _pageController.jumpToPage(clamped - 1);
+    }
   }
 
-  Future<void> _openJumpTo(int totalPages) async {
-    final target = await showJumpToModal(context, totalPages: totalPages);
+  Future<void> _openJumpTo(MushafDb db, int totalPages) async {
+    final target = await showJumpToModal(
+      context,
+      totalPages: totalPages,
+      db: db,
+    );
     if (target == null) return;
     final clamped = target.clamp(1, totalPages);
     _pageController.jumpToPage(clamped - 1);
@@ -113,23 +154,12 @@ class _MushafHomeState extends State<MushafHome> {
               return Column(
                 children: [
                   TopBar(
-                    pageNumber: currentPage,
-                    totalPages: totalPages,
-                    onPrev: currentPage > 1
-                        ? () => _pageController.previousPage(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOut,
-                            )
-                        : null,
-                    onNext: currentPage < totalPages
-                        ? () => _pageController.nextPage(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOut,
-                            )
-                        : null,
-                    onOpenSettings: _openSettings,
-                    onToggleBookmark: () => _state.toggleBookmark(currentPage),
-                    onOpenJumpTo: () => _openJumpTo(totalPages),
+                    currentEdition: _state.edition,
+                    onSetEdition: _state.setEdition,
+                    onOpenSettings: () => _openSettings(totalPages),
+                    onToggleBookmark: () =>
+                        _state.toggleBookmark(currentPage),
+                    onOpenJumpTo: () => _openJumpTo(db, totalPages),
                     isBookmarked: _state.isBookmarked(currentPage),
                   ),
                   Expanded(
