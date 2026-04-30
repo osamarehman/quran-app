@@ -45,3 +45,8 @@ yarn-error.*
 
 # Claude Code
 .claude/
+
+# Build artifacts
+/build/
+*.apk
+*.aab
