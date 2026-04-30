@@ -184,9 +184,17 @@ class _RukuBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final juz = juzForAyah(surahOfRukuStart, ayahOfRukuStart);
     final ruku = rukuNumberInSurah(surahOfRukuStart, ayahOfRukuStart);
+    const numberStyle = TextStyle(
+      fontSize: 10,
+      height: 1.0,
+      fontWeight: FontWeight.w600,
+      color: Color(0xFF333333),
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        Text(_arabicIndic('$juz'), style: numberStyle),
+        const SizedBox(height: 1),
         const Text(
           'ع',
           style: TextStyle(
@@ -197,26 +205,10 @@ class _RukuBadge extends StatelessWidget {
             color: Color(0xFF222222),
           ),
         ),
-        const SizedBox(height: 1),
-        Text(
-          _arabicIndic('$juz'),
-          style: const TextStyle(
-            fontSize: 10,
-            height: 1.0,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF333333),
-          ),
-        ),
-        if (ruku != null)
-          Text(
-            _arabicIndic('$ruku'),
-            style: const TextStyle(
-              fontSize: 10,
-              height: 1.0,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF333333),
-            ),
-          ),
+        if (ruku != null) ...[
+          const SizedBox(height: 1),
+          Text(_arabicIndic('$ruku'), style: numberStyle),
+        ],
       ],
     );
   }
