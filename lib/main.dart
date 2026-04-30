@@ -184,8 +184,14 @@ class MushafDb {
   MushafDb._(this.layoutDb, this.wordsDb);
 
   static Future<MushafDb> open() async {
+    debugPrint('[MushafDb] opening layout');
     final layout = await _openAsset('assets/data/qudratullah-indopak-15-lines.db');
+    debugPrint('[MushafDb] layout opened, sanity probe...');
+    final probe = await layout.rawQuery('SELECT COUNT(*) AS c FROM pages');
+    debugPrint('[MushafDb] layout probe: ${probe.first['c']} pages');
+    debugPrint('[MushafDb] opening words');
     final words = await _openAsset('assets/data/words-indopak-nastaleeq.db');
+    debugPrint('[MushafDb] words opened');
     return MushafDb._(layout, words);
   }
 
@@ -199,37 +205,59 @@ class MushafDb {
         flush: true,
       );
     }
-    return openReadOnlyDatabase(dest.path);
+    return openDatabase(dest.path);
   }
 
   Future<List<MushafLine>> getPage(int pageNumber) async {
+    debugPrint('[MushafDb] getPage($pageNumber) starting');
     final rows = await layoutDb.query(
       'pages',
       where: 'page_number = ?',
       whereArgs: [pageNumber],
       orderBy: 'line_number ASC',
     );
+    debugPrint('[MushafDb] getPage($pageNumber) -> ${rows.length} rows');
     return [
       for (final r in rows)
         MushafLine(
-          pageNumber: r['page_number'] as int,
-          lineNumber: r['line_number'] as int,
+          pageNumber: _intRequired(r['page_number']),
+          lineNumber: _intRequired(r['line_number']),
           lineType: r['line_type'] as String,
-          isCentered: (r['is_centered'] as int) == 1,
-          firstWordId: r['first_word_id'] as int?,
-          lastWordId: r['last_word_id'] as int?,
-          surahNumber: r['surah_number'] as int?,
+          isCentered: _intRequired(r['is_centered']) == 1,
+          firstWordId: _intOrNull(r['first_word_id']),
+          lastWordId: _intOrNull(r['last_word_id']),
+          surahNumber: _intOrNull(r['surah_number']),
         ),
     ];
   }
 
+  // SQLite's INTEGER affinity allows empty-string storage on absent values, so
+  // null-or-int columns can come back as "". Coerce defensively.
+  static int? _intOrNull(Object? v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is String) return v.isEmpty ? null : int.tryParse(v);
+    return null;
+  }
+
+  static int _intRequired(Object? v) {
+    if (v is int) return v;
+    if (v is String) {
+      final parsed = int.tryParse(v);
+      if (parsed != null) return parsed;
+    }
+    throw FormatException('expected int, got ${v.runtimeType}: $v');
+  }
+
   Future<List<MushafWord>> getWords(int firstId, int lastId) async {
+    debugPrint('[MushafDb] getWords($firstId..$lastId) starting');
     final rows = await wordsDb.query(
       'words',
       where: 'id BETWEEN ? AND ?',
       whereArgs: [firstId, lastId],
       orderBy: 'id ASC',
     );
+    debugPrint('[MushafDb] getWords($firstId..$lastId) -> ${rows.length} rows');
     return [
       for (final r in rows)
         MushafWord(
@@ -277,12 +305,15 @@ class _MushafPageState extends State<MushafPage> {
   }
 
   Future<_PageData> _load() async {
+    debugPrint('[MushafPage] loading page ${widget.pageNumber}');
     final lines = await widget.db.getPage(widget.pageNumber);
+    debugPrint('[MushafPage] got ${lines.length} lines');
     final wordsByLine = <int, List<MushafWord>>{};
     for (final l in lines) {
       if (l.firstWordId != null && l.lastWordId != null) {
-        wordsByLine[l.lineNumber] =
-            await widget.db.getWords(l.firstWordId!, l.lastWordId!);
+        final words = await widget.db.getWords(l.firstWordId!, l.lastWordId!);
+        debugPrint('[MushafPage] line ${l.lineNumber} (${l.lineType}): ${words.length} words');
+        wordsByLine[l.lineNumber] = words;
       }
     }
     return _PageData(lines, wordsByLine);
@@ -293,6 +324,17 @@ class _MushafPageState extends State<MushafPage> {
     return FutureBuilder<_PageData>(
       future: _data,
       builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Page load failed:\n${snap.error}',
+                style: const TextStyle(color: Colors.red),
+              ),
+            ),
+          );
+        }
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
