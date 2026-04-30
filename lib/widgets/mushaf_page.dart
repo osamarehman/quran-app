@@ -15,6 +15,14 @@ const double kNarrowPageThreshold = 0.75;
 /// Fraction of available width used when rendering a narrow page.
 const double kNarrowPageWidthFraction = 0.7;
 
+/// Shared 1px charcoal divider used by the page frame, the strip-vs-text
+/// vertical dividers, and the per-line horizontal cell dividers — so they
+/// all overlap to a single continuous grid.
+const BorderSide kCellDivider = BorderSide(
+  color: PageFrame.borderColor,
+  width: 1,
+);
+
 class _PageData {
   final List<MushafLine> lines;
   final Map<int, List<MushafWord>> wordsByLine;
@@ -150,54 +158,141 @@ class _PageBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Odd page (right side of an RTL spread) → strip on right.
-        final stripOnRight = pageNumber.isOdd;
-        final strip = MarkerStrip(
-          lines: data.lines,
-          wordsByLine: data.wordsByLine,
-          pageNumber: pageNumber,
-          width: kMarkerStripWidth,
-        );
-        // 16px horizontal padding on each side of the line column.
         final lineColumnAvailableWidth =
-            constraints.maxWidth - kMarkerStripWidth - 32;
-
+            constraints.maxWidth - 2 * kMarkerStripWidth;
         final maxNatural = pageMaxNaturalLineWidth(data.wordsByLine);
         final narrow =
             lineColumnAvailableWidth > 0 &&
             maxNatural > 0 &&
             (maxNatural / lineColumnAvailableWidth) < kNarrowPageThreshold;
-        final lineMaxWidth = narrow
-            ? lineColumnAvailableWidth * kNarrowPageWidthFraction
-            : lineColumnAvailableWidth;
 
-        final lineColumn = Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: lineMaxWidth),
-              child: Column(
-                children: [
-                  for (final l in data.lines)
-                    Expanded(
-                      child: MushafLineWidget(
-                        line: l,
-                        words: data.wordsByLine[l.lineNumber] ?? const [],
-                        onWordTap: onWordTap,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
+        final cellColumn = narrow
+            ? _NarrowLineCells(
+                data: data,
+                onWordTap: onWordTap,
+                maxWidth:
+                    lineColumnAvailableWidth * kNarrowPageWidthFraction,
+              )
+            : _GriddedLineCells(data: data, onWordTap: onWordTap);
+
+        final leftStrip = _StripCell(
+          data: data,
+          pageNumber: pageNumber,
+          divider: const Border(right: kCellDivider),
+        );
+        final rightStrip = _StripCell(
+          data: data,
+          pageNumber: pageNumber,
+          divider: const Border(left: kCellDivider),
         );
 
         return Row(
-          children: stripOnRight
-              ? [Expanded(child: lineColumn), strip]
-              : [strip, Expanded(child: lineColumn)],
+          children: [leftStrip, Expanded(child: cellColumn), rightStrip],
         );
       },
+    );
+  }
+}
+
+/// Marker strip wrapper that paints the inside-edge vertical divider
+/// (left or right) so it kisses the line-cell horizontal dividers exactly.
+class _StripCell extends StatelessWidget {
+  final _PageData data;
+  final int pageNumber;
+  final Border divider;
+
+  const _StripCell({
+    required this.data,
+    required this.pageNumber,
+    required this.divider,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(border: divider),
+      child: MarkerStrip(
+        lines: data.lines,
+        wordsByLine: data.wordsByLine,
+        pageNumber: pageNumber,
+        width: kMarkerStripWidth,
+      ),
+    );
+  }
+}
+
+/// Full-width gridded layout: one cell per line with a 1px top divider on
+/// every cell except the first. The page frame's outer border serves as the
+/// outermost top/bottom; cell dividers + strip dividers form the inner grid.
+class _GriddedLineCells extends StatelessWidget {
+  final _PageData data;
+  final ValueChanged<MushafWord>? onWordTap;
+
+  const _GriddedLineCells({required this.data, required this.onWordTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var i = 0; i < data.lines.length; i++)
+          Expanded(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: i == 0 ? null : const Border(top: kCellDivider),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                child: MushafLineWidget(
+                  line: data.lines[i],
+                  words: data.wordsByLine[data.lines[i].lineNumber] ??
+                      const [],
+                  onWordTap: onWordTap,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Narrow centered column for low-density pages (Fatiha). No cell borders —
+/// the visual is a tight centered text block, not a grid.
+class _NarrowLineCells extends StatelessWidget {
+  final _PageData data;
+  final ValueChanged<MushafWord>? onWordTap;
+  final double maxWidth;
+
+  const _NarrowLineCells({
+    required this.data,
+    required this.onWordTap,
+    required this.maxWidth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: Column(
+            children: [
+              for (final l in data.lines)
+                Expanded(
+                  child: MushafLineWidget(
+                    line: l,
+                    words: data.wordsByLine[l.lineNumber] ?? const [],
+                    onWordTap: onWordTap,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

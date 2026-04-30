@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/mushaf_db.dart';
 import '../data/quran_metadata.dart';
+import 'page_frame.dart';
 
 /// Vertical strip on the page's outside edge showing ruku, sajda, hizb, and
 /// waqf-lazim glyphs aligned to the line they fall on. Cells use Expanded so
@@ -26,11 +27,23 @@ class MarkerStrip extends StatelessWidget {
       width: width,
       child: Column(
         children: [
-          for (final line in lines)
+          for (var i = 0; i < lines.length; i++)
             Expanded(
-              child: _LineMarkerCell(
-                line: line,
-                words: wordsByLine[line.lineNumber] ?? const [],
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: i == 0
+                      ? null
+                      : const Border(
+                          top: BorderSide(
+                            color: PageFrame.borderColor,
+                            width: 1,
+                          ),
+                        ),
+                ),
+                child: _LineMarkerCell(
+                  line: lines[i],
+                  words: wordsByLine[lines[i].lineNumber] ?? const [],
+                ),
               ),
             ),
         ],

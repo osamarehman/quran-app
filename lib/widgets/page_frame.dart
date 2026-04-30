@@ -5,7 +5,7 @@ import '../data/quran_metadata.dart';
 /// Printed-mushaf style frame around a single page: thin border with a top
 /// band showing the surah glyph (left) and juz incipit (right).
 class PageFrame extends StatelessWidget {
-  static const Color _borderColor = Color(0xFF888888);
+  static const Color borderColor = Color(0xFF888888);
   static const double _borderInset = 4.0;
   static const double _topBandHeight = 28.0;
 
@@ -40,7 +40,7 @@ class PageFrame extends StatelessWidget {
       padding: const EdgeInsets.all(_borderInset),
       child: Container(
         decoration: BoxDecoration(
-          border: Border.all(color: _borderColor, width: 1),
+          border: Border.all(color: borderColor, width: 1),
           borderRadius: BorderRadius.circular(2),
         ),
         child: Column(
@@ -73,7 +73,7 @@ class PageFrame extends StatelessWidget {
                 ),
               ),
             ),
-            Container(height: 1, color: _borderColor),
+            Container(height: 1, color: borderColor),
             Expanded(child: child),
           ],
         ),
