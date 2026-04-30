@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'audio/audio_service.dart';
 import 'data/mushaf_db.dart';
 import 'screens/jump_to_modal.dart';
 import 'screens/settings_screen.dart';
@@ -173,6 +174,14 @@ class _MushafHomeState extends State<MushafHome> {
                       itemBuilder: (context, index) => MushafPage(
                         db: db,
                         pageNumber: index + 1,
+                        onWordTap: _state.audioOnTap
+                            ? (word) => AudioService().handleWordTap(
+                                  context,
+                                  db,
+                                  _state,
+                                  word,
+                                )
+                            : null,
                       ),
                     ),
                   ),
