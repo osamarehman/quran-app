@@ -1,0 +1,47 @@
+name: mushaf
+description: "IndoPak Nastaleeq Hafizi Mushaf"
+publish_to: 'none'
+version: 0.2.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  sqflite: ^2.3.3
+  sqflite_common_ffi: ^2.3.3
+  path: ^1.9.0
+  path_provider: ^2.1.4
+  shared_preferences: ^2.2.0
+  just_audio: ^0.9.40
+  http: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/data/
+
+  fonts:
+    - family: IndopakNastaleeq
+      fonts:
+        - asset: assets/fonts/IndopakNastaleeq.ttf
+    - family: IndopakNastaleeqWaqfLazim
+      fonts:
+        - asset: assets/fonts/IndopakNastaleeqWaqfLazim.ttf
+    - family: SurahName
+      fonts:
+        - asset: assets/fonts/SurahName.ttf
+    - family: QuranCommon
+      fonts:
+        - asset: assets/fonts/QuranCommon.ttf
+    - family: DigitalKhattIndoPak
+      fonts:
+        - asset: assets/fonts/DigitalKhattIndoPak.otf
